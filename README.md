@@ -1,11 +1,11 @@
 # MasG EV Tool
 
-A cross-platform market-data analysis and monitoring system. It continuously
-ingests prices from two prediction-market exchanges (**Kalshi** and
-**Polymarket**), matches each market to the same real-world sporting event at a
-sportsbook (**FanDuel**, via The Odds API), converts the sportsbook odds into a
-vig-free model probability, and flags markets whose exchange price diverges from
-that model estimate. Every flagged market carries a full, inspectable rule trace
+A cross-platform market-data analysis and monitoring system. It ingests
+prices from two prediction-market exchanges (**Kalshi** and **Polymarket**),
+matches each market to the same real-world sporting event at a sportsbook
+(**FanDuel**, via The Odds API), converts the sportsbook odds into a vig-free
+model probability, and flags markets whose exchange price diverges from that
+model estimate. Every flagged market carries a full, inspectable rule trace
 explaining why it was classified **BUY**, **WATCH**, or **SKIP**.
 
 The system is **read-only decision support**. It places no orders, holds no
@@ -191,7 +191,7 @@ failure-handling matrix and the design tradeoffs.
   In exchange, every BUY can be explained rule by rule, and the policy table is
   directly unit-tested.
 
-### 4. Asynchronous refresh with single-flight locking and honest staleness
+### 4. Asynchronous refresh with single-flight locking and visible staleness
 
 - **Problem.** A full scan fans out to several providers, and several callers
   can request one at the same time: the dashboard's cold start, the manual
@@ -288,7 +288,7 @@ This is a **local, single-user application**. It is not deployed or hosted
 anywhere. The backend binds to `127.0.0.1` and has no authentication. Read
 [SECURITY.md](SECURITY.md) before changing that.
 
-**Prerequisites:** Python 3.12+ and Node.js 18+.
+**Prerequisites:** Python 3.12+ and Node.js 18.18+ (required by Next.js 15).
 
 ### Option A: offline demo (no accounts or keys)
 
@@ -311,8 +311,10 @@ walkthrough, including Windows commands.
 ### Option B: live data
 
 1. **Configure keys.** Copy `backend/.env.example` to `backend/.env`. An
-   [Odds API](https://the-odds-api.com/) key is required. A Kalshi key and
-   Pushover credentials are optional. `.env` is gitignored.
+   [Odds API](https://the-odds-api.com/) key is required. A Kalshi key is
+   needed in practice: the default scan is Kalshi-only, and without
+   `KALSHI_API_KEY` the Kalshi adapter returns no markets. Pushover
+   credentials are optional. `.env` is gitignored.
 2. **Start the backend:**
 
    ```bash
@@ -357,9 +359,9 @@ guidance in [docs/OPERATIONS.md](docs/OPERATIONS.md) first.
 
 ## Limitations and status
 
-- **Local only.** There is no authentication. Cross-site requests are rejected,
-  but anything that can reach `127.0.0.1:8000` can use the API. It is not
-  designed to run as a networked or multi-user service.
+- **Local only.** There is no authentication. Cross-site state-changing
+  requests are rejected, but anything that can reach `127.0.0.1:8000` can
+  use the API. It is not designed to run as a networked or multi-user service.
 - **Model, not truth.** The "model probability" is FanDuel's price with the
   margin removed. It is an estimate from one sportsbook, not an objectively
   known probability. Exchange prices move after a snapshot is taken, so every
@@ -369,8 +371,8 @@ guidance in [docs/OPERATIONS.md](docs/OPERATIONS.md) first.
   order proposals for analysis only. It is disabled by default, scoped to
   Kalshi head-to-head markets, and has no order-placement code path.
 - **Single process, in-memory snapshot.** Snapshots do not survive a restart,
-  and the design does not scale horizontally as written. The architecture doc
-  discusses what would change.
+  and the design does not scale horizontally as written. See the
+  [concurrency model](docs/ARCHITECTURE.md#13-concurrency-model).
 - **Quota-bound.** Live use is limited by The Odds API's metered quota. Caching
   and per-sport toggles reduce credit spend, but there is no global credit
   budget enforcer yet.

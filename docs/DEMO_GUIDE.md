@@ -14,10 +14,9 @@ DemoMarketAdapter ──► NormalizedMarket ──┐
 demo odds fetcher ──► FanDuel events ────┘     (same functions the live scanner uses)
 ```
 
-- **Injection points.** `fetch_opportunities()` already accepted an `adapters`
-  list. It now also takes an `odds_fetcher`, and
-  `services/snapshot.refresh_snapshot()` passes the demo versions of both when
-  demo mode is on. No BUY/WATCH/SKIP status is hard-coded: the real rule engine
+- **Injection points.** `fetch_opportunities()` takes an `adapters` list and
+  an `odds_fetcher`, and `services/snapshot.refresh_snapshot()` passes the
+  demo versions of both when demo mode is on. No BUY/WATCH/SKIP status is hard-coded: the real rule engine
   produces every one of them.
 - **Synthetic data.** All teams and players are invented, every market id
   contains `DEMO`, and no market links to a real exchange page. Prices and odds
@@ -42,7 +41,7 @@ The guards are in `guards.py`, and the CLI is in `__main__.py`. Tests are in
 
 ## Start it
 
-**macOS / Linux / Git Bash.** Requires Python 3.12+ and Node 18+.
+**macOS / Linux / Git Bash.** Requires Python 3.12+ and Node 18.18+.
 
 ```bash
 cd backend && pip install -r requirements.txt && cd ..
@@ -54,7 +53,8 @@ The script starts the backend on `127.0.0.1:8000` and the dashboard on
 <http://localhost:3000>. Opening the dashboard runs the first scan
 automatically; the **Scan** button re-runs it.
 
-**Windows (cmd).** Use two terminals:
+**Windows (cmd).** Use two terminals (this assumes a `backend\.venv`
+virtualenv with `requirements.txt` installed):
 
 ```bat
 cd backend && set "MASG_DEMO_MODE=1" && .venv\Scripts\activate && uvicorn main:app --host 127.0.0.1 --port 8000
@@ -81,10 +81,12 @@ strip shows the following:
 - **Alerts** shows `Off (dry-run)`. Dry-run is the default.
 
 The opportunities table lists BUY and WATCH rows sorted by edge. SKIPs are
-filtered out of this view but still counted.
+left out of the snapshot; they are counted only in the API's `status_counts`
+and shown in the diagnostic trace (step 4).
 
 > The default **Min Edge 4%** view filter hides the two rows whose edge is
-> below 4%. Set it to `0` and press **Scan** to see all six Kalshi rows.
+> below 4%. Set it to `0` to see all six Kalshi rows (the filter
+> applies immediately; no rescan is needed).
 
 ### 2. A BUY, traced end to end (60 s)
 
@@ -131,7 +133,8 @@ following are worth pointing out:
   A gap that large between price and probability suggests the YES/NO sides are
   inverted.
 - **`LINE_MISMATCH`.** A totals market at 226.5 must not be priced from
-  FanDuel's 221.5 line. To see this one, enable Polymarket under **Books**.
+  FanDuel's 221.5 line. This and the next case are Polymarket fixtures; the
+  CLI and the debug endpoint include them whatever the **Books** setting.
 - **`CONFIDENCE_BELOW_SURVIVAL`.** An undated Polymarket market reaches only
   0.825 match confidence (0.65 × name + 0.35 × date, with date scored 0.5),
   below the 0.85 survival threshold.
@@ -142,9 +145,9 @@ that the production path drops.
 ### 5. Platform toggle and API surface (30 s)
 
 - **Platform toggle.** Tick **Polymarket** under **Books** and press **Scan**.
-  A Polymarket totals BUY (Over 221.5) and the `LINE_MISMATCH` SKIP appear. The
-  backend honours the toggle, so the UI never shows a setting the backend
-  ignores.
+  A Polymarket totals BUY (Over 221.5) appears in the table. (The Polymarket
+  SKIPs stay out of the table, as all SKIPs do; see step 4.) The backend honours the toggle, so the UI
+  never shows a setting the backend ignores.
 - **API surface.** The same data is available from the API:
 
 ```bash

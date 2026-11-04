@@ -305,8 +305,8 @@ Do not break:
 
 Frontend API calls should stay centralized in:
 
-- `frontend/app/lib/api.ts`
-- `frontend/app/lib/monitor-api.ts`
+- `frontend/lib/api.ts`
+- `frontend/lib/monitor-api.ts`
 
 Do not add inline fetches inside components unless the project already uses that pattern and there is a clear reason.
 

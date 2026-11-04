@@ -1,5 +1,7 @@
 # MasG EV Tool — Full Project Context
 
+> **Note:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) is the maintained architecture overview; this file is a historical handoff snapshot (facts refreshed 2026-11-04).
+
 > Context document for handing the project off to a new LLM conversation.
 > Snapshot date: 2026-04-30. Codebase last touched ~2026-04-12.
 > Read this top-to-bottom before making changes. It captures the *why* and the
@@ -20,12 +22,14 @@ Final betting is manual via the platform link.
 
 The owner-operator is the user (Mason), running it
 locally on Windows 11. There is no deployment, no auth, no multi-tenant
-concern. CORS is locked to `localhost:3000`.
+concern. CORS is locked to `localhost:3000` / `127.0.0.1:3000`, and an origin
+guard (`services/origin_guard.py`) rejects cross-site state-changing requests.
 
 ### Current operating defaults
 - **Books**: Kalshi enabled, Polymarket disabled. Polymarket is opt-in via
   the dashboard "Books" toggles or `POST /api/scan/config`.
-- **Alerts**: monitor scheduler off; defaults to `dry_run=true` and
+- **Alerts**: monitor scheduler off; defaults to `dry_run=true` (the code
+  default since `b18615b`) and
   `MonitorConfig.platforms=["kalshi"]` when started.
 - **Player props**: disabled (`enable_props=False`).
 - **Pushover**: credentials configured and end-to-end verified via
@@ -63,14 +67,26 @@ concern. CORS is locked to `localhost:3000`.
 
 ```
 masg-ev-tool/
-├── README.md                  # User-facing setup and feature docs
+├── README.md                  # Project overview + getting started
 ├── CLAUDE.md                  # Project rules + change discipline (small file)
-├── PROJECT_CONTEXT.md         # ← THIS FILE
+├── SECURITY.md
+├── docs/
+│   ├── PROJECT_CONTEXT.md     # ← THIS FILE
+│   ├── ARCHITECTURE.md        # Maintained architecture overview
+│   ├── OPERATIONS.md          # Env vars, REST API, config defaults, presets, go-live
+│   ├── KNOWN_ISSUES.md        # Current verified backlog
+│   ├── MANUAL_TESTING_RUNBOOK.md
+│   ├── DEMO_GUIDE.md          # Offline demo mode
+│   └── screenshots/
 ├── start-dev.bat              # Windows launcher for both servers
+├── start-demo.sh              # Offline demo launcher (MASG_DEMO_MODE=1)
+├── .github/workflows/ci.yml   # Backend pytest (3.12/3.13) + frontend typecheck/build
 ├── .gitignore
 ├── backend/
-│   ├── main.py                # FastAPI app + CORS + 4 routers
+│   ├── main.py                # FastAPI app + CORS + origin guard + 5 routers
 │   ├── requirements.txt       # fastapi, uvicorn, httpx, pydantic, dotenv
+│   ├── requirements-dev.txt   # requirements.txt + pytest
+│   ├── pytest.ini             # testpaths/pythonpath; run `python -m pytest` from backend/
 │   ├── .env / .env.example    # API keys (gitignored)
 │   ├── data/
 │   │   └── alert_state.json   # Persisted AlertRecord dict (gitignored)
@@ -80,10 +96,15 @@ masg-ev-tool/
 │   │   ├── opportunities.py   # /api/opportunities (snapshot, refresh, debug, history)
 │   │   ├── monitor.py         # /api/monitor (alert config + start/stop + status)
 │   │   ├── odds.py            # /api/odds (legacy debug — see "gaps" §13)
-│   │   └── scan.py            # /api/scan/config, /api/data-status, /api/sports
+│   │   ├── scan.py            # /api/scan/config, /api/data-status, /api/sports
+│   │   └── maker.py           # /api/maker (paper-only maker proposals)
 │   ├── services/
+│   │   ├── origin_guard.py        # OriginGuardMiddleware — 403 for cross-site state-changing requests
+│   │   ├── redaction.py           # redact_secrets + log filter masking apiKey/token params
+│   │   ├── demo/                  # Offline demo mode (fixtures, guards, CLI)
+│   │   ├── maker/                 # Paper maker subsystem (PAPER ONLY)
 │   │   ├── engine_config.py       # EngineConfig — every tuneable threshold (no magic numbers elsewhere)
-│   │   ├── rule_engine.py         # MarketFeatures + POLICY_TABLE (20 rules) + evaluate_rules() + Kelly
+│   │   ├── rule_engine.py         # MarketFeatures + POLICY_TABLE (23 rules) + evaluate_rules() + Kelly
 │   │   ├── feature_extractor.py   # Pass A — h2h/totals/handicap features per (market, event)
 │   │   ├── prop_extractor.py      # Pass A for player props (gated by enable_props)
 │   │   ├── opportunities.py       # End-to-end Pass A → Pass B pipeline + dedup + sort
@@ -112,32 +133,35 @@ masg-ev-tool/
 │   │       ├── odds_poller.py     # Scheduled Odds API poller with daily budget
 │   │       ├── ws_polymarket.py   # Polymarket CLOB WebSocket
 │   │       └── ws_kalshi.py       # Kalshi WebSocket
-│   └── tests/                     # 22 pytest files — see §10
+│   └── tests/                     # 44 pytest modules — see §10
 └── frontend/
     ├── package.json               # Next 15 + React 19 + Tailwind 4 + TS 5
     ├── next.config.ts
     ├── tsconfig.json
     ├── postcss.config.mjs
     ├── tailwind.config.ts
-    └── app/
-        ├── layout.tsx             # Top nav + global styles
-        ├── page.tsx               # Server entry — pre-fetches /snapshot, hands to client
-        ├── globals.css
-        ├── model/page.tsx         # "Model" tab (separate page; not central to scanner)
-        ├── components/dashboard/
-        │   ├── DashboardClient.tsx        # Top-level client — toolbar, filters, polls /status, deep-link
-        │   ├── OpportunitiesTable.tsx     # Sortable opportunities grid
-        │   ├── MarketDetailPanel.tsx      # Right sidebar — single-opp detail
-        │   ├── TrackedPositions.tsx       # Manually marked positions w/ CLV
-        │   ├── NotificationSettings.tsx   # Phone alert config + start/stop
-        │   ├── DataStatus.tsx             # Per-sport per-book matrix
-        │   └── NavWalletButton.tsx        # Stub
-        └── lib/
-            ├── types.ts                   # Opportunity / TrackedPosition / response shapes
-            ├── api.ts                     # Snapshot, refresh, status, history, registry, data-status
-            ├── monitor-api.ts             # Monitor config + start/stop + status + test push
-            ├── sport-labels.ts            # sportLabel(), marketTypeLabel(), isPropType()
-            └── useTrackedPositions.ts     # localStorage tracking + CLV backfill (FanDuel + platform close)
+    ├── app/
+    │   ├── layout.tsx             # Top nav + global styles
+    │   ├── page.tsx               # Server entry — pre-fetches /snapshot, hands to client
+    │   ├── globals.css
+    │   ├── model/page.tsx         # "Model" tab (separate page; not central to scanner)
+    │   └── components/
+    │       ├── ui/                        # Shared UI primitives
+    │       └── dashboard/
+    │           ├── DashboardClient.tsx        # Top-level client — toolbar, filters, polls /status, deep-link
+    │           ├── OpportunitiesTable.tsx     # Sortable opportunities grid
+    │           ├── MarketDetailPanel.tsx      # Right sidebar — single-opp detail
+    │           ├── TrackedPositions.tsx       # Manually marked positions w/ CLV
+    │           ├── NotificationSettings.tsx   # Phone alert config + start/stop
+    │           ├── DataStatus.tsx             # Per-sport per-book matrix
+    │           └── …                          # StatusStrip, DemoModeBanner, PaperMaker*, etc.
+    │                                          # (NavWalletButton stub removed)
+    └── lib/                       # NOTE: frontend/lib/, not frontend/app/lib/
+        ├── types.ts               # Opportunity / TrackedPosition / response shapes
+        ├── api.ts                 # Snapshot, refresh, status, history, registry, data-status
+        ├── monitor-api.ts         # Monitor config + start/stop + status + test push
+        ├── sport-labels.ts        # sportLabel(), marketTypeLabel(), isPropType()
+        └── useTrackedPositions.ts # localStorage tracking + CLV backfill (FanDuel + platform close)
 ```
 
 ---
@@ -188,7 +212,7 @@ masg-ev-tool/
 - **WATCH** — at least one DOWNGRADE rule fails, no CRITICAL fails
 - **SKIP** — at least one CRITICAL rule fails (dropped from API response by default)
 
-### POLICY_TABLE (20 rules, defined once in `rule_engine.py`)
+### POLICY_TABLE (23 rules, defined once in `rule_engine.py`)
 
 | Stage      | Rule                  | Severity   | Reason code                |
 |------------|-----------------------|------------|----------------------------|
@@ -216,9 +240,8 @@ masg-ev-tool/
 | metadata   | metadata_complete     | DOWNGRADE  | INCOMPLETE_METADATA        |
 | metadata   | prices_consistent     | DOWNGRADE  | PRICES_INCONSISTENT        |
 
-(Yes that's 23 entries — count includes the alignment/metadata rules. The
-README claims "20 rules" but the live table has more; treat the table itself
-as authoritative.)
+(23 entries, matching the README. Treat the table in `rule_engine.py` as
+authoritative.)
 
 ### Key formulas
 - `pm_price_effective = pm_price + cost_buffer`  (cost_buffer = $0.01 except
@@ -361,7 +384,11 @@ land in `discovery_cache`.
 
 ## 6. Backend HTTP API
 
-CORS allows only `http://localhost:3000`. Methods: GET, POST, OPTIONS.
+CORS allows only `http://localhost:3000` and `http://127.0.0.1:3000`
+(`ALLOWED_ORIGINS` in `main.py`). Methods: GET, POST, OPTIONS. The same list
+feeds `OriginGuardMiddleware`, which returns 403 for non-GET/HEAD/OPTIONS
+requests carrying a foreign `Origin`. The `/api/maker` router (paper maker)
+is not listed below; see `docs/OPERATIONS.md` §4 for the full API reference.
 
 ### `/api/opportunities` router
 | Method + path                          | Notes |
@@ -384,7 +411,7 @@ CORS allows only `http://localhost:3000`. Methods: GET, POST, OPTIONS.
 | POST `/monitor/stop`         | Cancel scheduler tasks, save state. |
 | GET `/monitor/status`        | running/enabled, total_cycles, total_alerts_sent, per-source status. |
 | GET `/monitor/history`       | Last 50 alerted records. |
-| POST `/monitor/test`         | Send real Pushover test (bypasses dry_run). |
+| POST `/monitor/test`         | Send real Pushover test (bypasses dry_run). Refused (403) in demo mode. |
 
 ### `/api/scan` router
 | Method + path | Notes |
@@ -398,7 +425,7 @@ CORS allows only `http://localhost:3000`. Methods: GET, POST, OPTIONS.
 | Method + path | Notes |
 |---|---|
 | GET `/odds/tennis`     | Fetch tennis events directly. Tennis-only. |
-| GET `/odds/matches`    | Cross-match PM tennis vs FD odds with the legacy matcher. **Has a known bug** (uses `len(markets)` instead of `len(normalized)` — see §13). |
+| GET `/odds/matches`    | Cross-match PM tennis vs FD odds with the legacy matcher. (The old `len(markets)` bug is fixed — it now reports `len(normalized)`; see §13.) |
 
 ---
 
@@ -413,9 +440,12 @@ CORS allows only `http://localhost:3000`. Methods: GET, POST, OPTIONS.
   change of a watched market, fires a debounced re-evaluation
   (10-second cooldown between WS-triggered evaluations).
 - **KalshiWsConsumer** — orderbook_delta channel, same debounce.
+  Both WS consumers reconnect with exponential backoff (5→60s cap), including
+  after clean server closes (commit `29cd0ac`).
 - **MonitorScheduler** orchestrates all three. After each pipeline run it
   calls `_update_watch_lists` so the WS consumers track the *current* set of
-  non-SKIP markets.
+  non-SKIP markets. `start()`/`stop()` are serialized by a lifecycle lock so
+  overlapping start/stop cannot leave orphan poller/WS tasks (`705169a`).
 
 ### Alert decision tree (`AlertManager._decide`)
 For each opportunity that passes user filters:
@@ -427,7 +457,8 @@ For each opportunity that passes user filters:
 3. Past cooldown → treat as **NEW** again (alert).
 
 Hourly cap (`max_alerts_per_hour`): if more candidates than slots, sort by
-edge desc and take top N.
+edge desc and take top N. The remaining-slot count is clamped at 0, so
+lowering the cap mid-hour never sends extra alerts (commit `848f133`).
 
 ### Filter rules (`AlertManager._passes_filters`)
 - `status == "BUY"` (WATCH/SKIP never alerted)
@@ -455,7 +486,8 @@ edge desc and take top N.
 - Kalshi has no public deep link scheme, so web URL is used.
 
 ### State persistence
-`backend/data/alert_state.json` is written on every cycle and on stop. Tracks
+`backend/data/alert_state.json` is written on every cycle and on stop
+(atomically: temp file + fsync + `os.replace`, commit `f73c033`). Tracks
 `AlertRecord` per opportunity key (`platform|event|market_type|side|line`)
 plus a rolling hourly alert timestamp list.
 
@@ -540,12 +572,26 @@ alerts. `dry_run=True` lets you exercise the alert flow without them.
 ```
 cd backend
 .venv\Scripts\activate
-python -m pytest tests/ -v
+pip install -r requirements-dev.txt
+python -m pytest                 # config in backend/pytest.ini
 ```
+CI (`.github/workflows/ci.yml`) runs the backend suite on Python 3.12/3.13
+with outbound HTTP blackholed, plus the frontend typecheck and build.
+
+### Offline demo
+`start-demo.sh` (or `MASG_DEMO_MODE=1`) runs the real pipeline on synthetic
+fixtures with no keys or outbound calls; see `docs/DEMO_GUIDE.md`.
 
 ---
 
 ## 10. Test inventory (`backend/tests/`)
+
+44 test modules, 1303 tests passing as of 2026-11-04 (`7b161a2`). The table
+below lists the original core files only; `ls backend/tests/` for the rest
+(e.g. `test_origin_guard.py`, `test_secret_redaction.py`,
+`test_price_history.py`, `test_scheduler_lifecycle.py`,
+`test_ws_reconnect_backoff.py`, `test_odds_failure_staleness.py`,
+`test_demo_mode.py`, `test_maker_*.py`).
 
 | File                             | What it covers |
 |----------------------------------|----------------|
@@ -628,8 +674,15 @@ to reuse data:
 
 ## 13. Known gaps / things that are stubby / things to clean up
 
-(Items that have been fixed since the original draft are removed; items
-listed here still apply to current `main` HEAD `04e9013`.)
+(Written against `04e9013`; refreshed 2026-11-04 at `7b161a2`. The current,
+re-verified backlog is [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) — prefer it over
+this list. Fixed since `03deae7`: Kalshi 3-way price-history math
+(`78bad19`), atomic alert-state writes (`f73c033`), CSRF origin guard
+(`0443910`), secrets redaction + stale-odds eviction with `degraded` /
+`odds_failures` on `/opportunities/status` (`dbb71ce`), scheduler
+start/stop lifecycle lock (`705169a`), WS reconnect backoff (`29cd0ac`),
+hourly-cap clamp (`848f133`), `MonitorConfig.dry_run` default `True`
+(`b18615b`).)
 
 1. **`routers/odds.py` is legacy.** `/odds/tennis` and `/odds/matches` exist
    from the tennis-only era. The frontend never calls them; the dashboard
@@ -654,12 +707,12 @@ listed here still apply to current `main` HEAD `04e9013`.)
    `1 - best_ask` instead of using stale Gamma metadata (commit `ce6f7ce`).
    This keeps consistency by construction but is a workaround; long-term
    the WS consumer could maintain a live cache so missing-book scenarios
-   are rare.
+   are rare. Still open — tracked as KNOWN_ISSUES M-11 (understates the
+   NO cost by the spread).
 
-5. **Kalshi 3-way price-history math is still 2-way**:
-   `services/price_history.py:198-201` applies `min(m1_ask, 1.0 - m2_bid)`
-   cross-market arithmetic which is invalid for soccer 3-way markets.
-   Affects CLV backfill only (not live opportunities). Not yet fixed.
+5. ~~**Kalshi 3-way price-history math is still 2-way**~~ — **Fixed**
+   (`78bad19`): cross-market pairing is now used only for strict 2-way
+   events; 3-way (draw) events use each market's own mid.
 
 6. **Kalshi 3-way feature semantics for the NO side**: the adapter emits
    two NormalizedMarkets per soccer event (one per team), each with
@@ -668,28 +721,31 @@ listed here still apply to current `main` HEAD `04e9013`.)
    `1 - team_yes`. Only `outcome_prices[0]` (the team's own YES price)
    is used for pricing, so this is observability-only — but adversarial
    cases involving the NO side could still surface incorrect labels.
-   Open question, no concrete repro yet.
+   Still open — tracked as KNOWN_ISSUES M-14. (Separately, `fded37e`
+   stopped the draw/Tie leg being emitted as an h2h team market.)
 
 7. **Disabled sports with no FanDuel lines** — Cricket IPL, Rugby NRL,
    Hockey AHL, AFL. They appear in the registry as `enabled=False` but
    if FanDuel ever starts pricing them, just flip the flag.
 
-8. **No CSRF / no auth** on the backend. Fine for single-user localhost.
-   If anyone ever exposes this beyond localhost, add at minimum:
-   - origin allowlist (currently only `localhost:3000` is permitted in
-     CORS, but POSTs are unguarded otherwise).
-   - simple bearer auth on the monitor + scan endpoints.
+8. **No auth** on the backend. Fine for single-user localhost. CSRF is
+   now mitigated (`0443910`): `OriginGuardMiddleware` rejects
+   state-changing requests with a foreign `Origin`; requests without an
+   `Origin` header are still allowed (KNOWN_ISSUES S-1). If anyone ever
+   exposes this beyond localhost, add simple bearer auth on the monitor +
+   scan endpoints.
 
 9. **Pushover credentials live in plain `.env`.** Consider Windows DPAPI
    or a secret manager if the box is shared.
 
 10. **`AlertStateStore.prune_stale(max_age_hours)` exists but is not
-    scheduled.** Records accumulate; both live and dry-run sends count
+    scheduled** (KNOWN_ISSUES R-13; saves are now atomic, `f73c033`). Records accumulate; both live and dry-run sends count
     toward the rolling hourly cap, so dry-run records can briefly consume
     budget after a switch to live. Self-heals after 60 minutes.
 
 11. **No structured logging.** The codebase uses `logger.info/warning/error`
-    with f-strings or %-formatting. If you ever need to grep for an alert
+    with f-strings or %-formatting. Credential query params (`apiKey`,
+    `token`, …) are masked in logs by `services/redaction.py` (`dbb71ce`). If you ever need to grep for an alert
     flow, search for `"AlertManager cycle"`, `"Pass A"`, `"Pass B"`,
     `"Series dedup"`, `"Pushover"`, `"DRY RUN"`, etc.
 
@@ -728,8 +784,8 @@ listed here still apply to current `main` HEAD `04e9013`.)
    `max_plausible_edge`.
 
 ### Tweak an alert preset
-Edit `PRESETS` in `services/monitor/config.py`. Update the README presets
-table to match.
+Edit `PRESETS` in `services/monitor/config.py`. Update the presets table in
+`docs/OPERATIONS.md` §8 to match.
 
 ### Add a new policy rule
 1. Write `_my_rule(features, config) -> bool` in `rule_engine.py`.
@@ -756,8 +812,9 @@ Don't, unless intentional. If you must:
 
 ## 15. Snapshot of current runtime state
 
-- **Backend**: FastAPI app exposing 4 routers under `/api`. CORS for
-  localhost:3000 only.
+- **Backend**: FastAPI app exposing 5 routers under `/api` (odds,
+  opportunities, monitor, scan, maker). CORS for localhost:3000 /
+  127.0.0.1:3000 only, plus the origin guard.
 - **Books default**: `ScanConfig.platforms` defaults to Kalshi enabled,
   Polymarket disabled (commit `b6c14ee`). Default scans never call
   `PolymarketAdapter.fetch_markets` — no Gamma fetch, no CLOB calls.
@@ -770,14 +827,18 @@ Don't, unless intentional. If you must:
   (commit `93a00ab`). Status / duration / error metadata is centrally
   recorded in `services.snapshot` and surfaced via
   `GET /api/opportunities/status` (`refresh_started_at`, `last_refresh_error`,
-  `last_refresh_duration_seconds`, `last_trigger`).
+  `last_refresh_duration_seconds`, `last_trigger`, and — since `dbb71ce` —
+  `odds_failures` / `degraded` when a sport's FanDuel refetch failed and its
+  expired odds were evicted).
 - **Frontend**: Single dashboard that polls the snapshot endpoint and shows a
   filtered/sorted table of EV opportunities, with a sidebar detail panel,
   a tracked-positions section, alert configuration, and a per-sport data
   status matrix. Toolbar exposes Books toggles (Kalshi / Polymarket) wired
   to `POST /api/scan/config`. Default Min Edge filter is 4%. Time columns
   render in the user's local timezone with explicit "(local)" labels.
-- **Monitor**: Off by default. `MonitorConfig.platforms` defaults to
+- **Monitor**: Off by default. `MonitorConfig.dry_run` defaults to `True`
+  (commit `b18615b`; before that the code defaulted to `False`).
+  `MonitorConfig.platforms` defaults to
   `["kalshi"]` (commit `31d13b6`) so the alert-side allowlist mirrors the
   scan-side default and cannot drift. Once started via the dashboard or
   `POST /monitor/start`, it goes through `refresh_snapshot()` for every
@@ -799,8 +860,8 @@ Don't, unless intentional. If you must:
   ~600 credits/month — slightly over the free tier. Caches usually keep this
   much lower in practice. Default scans run faster (~3-10s) when only
   Kalshi is enabled because there's no Polymarket CLOB hydration.
-- **Tests**: `pytest tests/` reports 752 passed (current `main` HEAD
-  `04e9013`).
+- **Tests**: `python -m pytest` (from `backend/`) reports 1303 passed across
+  44 test modules (HEAD `7b161a2`, 2026-11-04).
 
 ---
 
@@ -860,11 +921,8 @@ weren't read. I flag them so the next conversation can resolve them.
    Polymarket in `ScanConfig`, they should also add it to
    `MonitorConfig.platforms` (or the alert allowlist will silently drop
    Polymarket BUYs). Worth deriving one from the other automatically.
-8. **Kalshi 3-way CLV math** (price_history.py): currently uses 2-way
-   cross-market arithmetic for soccer, which is incorrect when a draw
-   exists. Fix is straightforward (single-market mid for 3-way events)
-   but not yet implemented. Affects CLV-backfill accuracy only, not
-   live opportunities.
+8. ~~**Kalshi 3-way CLV math**~~ — **Resolved** in `78bad19`: 3-way
+   (draw) events now use each market's own mid in `price_history.py`.
 
 ---
 

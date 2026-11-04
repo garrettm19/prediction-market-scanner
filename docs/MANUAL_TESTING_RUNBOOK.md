@@ -1,15 +1,18 @@
 # MasG EV Tool — Manual Testing Runbook
 
 > Practical operator guide for running the scanner, interpreting output,
-> and deciding whether to act on a BUY. Companion to `README.md` (setup),
-> `../CLAUDE.md` (project rules), [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) (detailed project context) and [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+> and deciding whether to act on a BUY. Companion to [`README.md`](../README.md) (overview + getting started),
+> [`OPERATIONS.md`](./OPERATIONS.md) (env vars, full REST API, config defaults, presets, go-live procedure),
+> [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) (current verified backlog),
+> [`../CLAUDE.md`](../CLAUDE.md) (project rules), [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) (detailed project context) and [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 >
 > **Validated operating state (current default):**
 > - **Books**: Kalshi ON, Polymarket OFF. Polymarket is opt-in only via the
 >   dashboard "Books" toggles or `POST /api/scan/config`. Default scans never
 >   call the Polymarket adapter — no Gamma fetch, no CLOB calls.
 > - **Alerts**: Monitor scheduler is OFF by default. When started, defaults
->   to `dry_run=true` and `MonitorConfig.platforms=["kalshi"]`.
+>   to `dry_run=true` (the `MonitorConfig` code default since commit
+>   `b18615b`) and `MonitorConfig.platforms=["kalshi"]`.
 > - **Pushover end-to-end**: verified — `POST /api/monitor/test` was sent
 >   successfully. Credentials and notification delivery confirmed working.
 > - **Live alerts**: still off until a real dry-run BUY payload is observed.
@@ -50,6 +53,11 @@ start-dev.bat
 ```
 Two terminals open, backend on :8000, frontend on :3000.
 
+### Offline demo (no keys, no outbound calls)
+`./start-demo.sh` (macOS/Linux/Git Bash) runs both servers with
+`MASG_DEMO_MODE=1` on synthetic fixtures. Monitor start/test are refused
+with 403 in demo mode. See [`DEMO_GUIDE.md`](./DEMO_GUIDE.md).
+
 ### Required env vars (in `backend/.env`)
 ```
 ODDS_API_KEY        = <your-key>          # the-odds-api.com — required for any scan
@@ -58,6 +66,7 @@ KALSHI_API_KEY      = <your-key>          # optional but recommended
 PUSHOVER_USER_KEY   = <your-key>          # optional, only if you ever enable live alerts
 PUSHOVER_API_TOKEN  = <your-token>
 ```
+(`MASG_DEMO_MODE=1` is an optional extra; see `OPERATIONS.md` §2 for the full table.)
 Without `ODDS_API_KEY`, the pipeline fails with 503 because there is no FanDuel truth source.
 
 ### Stopping
@@ -321,7 +330,8 @@ intended way to confirm the notification path before flipping for real.
 - **Defaults aligned**: `MonitorConfig.platforms = ["kalshi"]` mirrors
   `ScanConfig.platforms` so the alert allowlist cannot drift from the scan
   layer (commit `31d13b6`).
-- **Backend test suite**: 752 passed (full backend `pytest tests/`).
+- **Backend test suite**: 1303 passed across 44 test modules
+  (`cd backend && python -m pytest`, HEAD `7b161a2`, 2026-11-04).
 - **Soccer phantom-EV class**: structurally blocked. Soccer candidates with
   `fd.draw_odds=None` SKIP via `NO_BOOKMAKER_DATA` at the feature layer
   (commit `04e9013`). Both teams of an MLS match cannot both surface BUY.
@@ -411,7 +421,7 @@ Before clicking Scan or trusting any BUY, verify each of these holds:
       Polymarket for this session).
 - [ ] `GET /api/monitor/config` shows `dry_run=true` and `enabled=false`
       (unless you're inside a deliberate live-test window).
-- [ ] `GET /api/opportunities/status` shows `last_refresh_error=null`
+- [ ] `GET /api/opportunities/status` shows `last_refresh_error=null` and `degraded=false`
       after the most recent refresh.
 - [ ] `platforms_fetched` in the snapshot matches what you intended
       (Kalshi-only by default; both books only if Polymarket was toggled on).
@@ -432,6 +442,10 @@ Before clicking Scan or trusting any BUY, verify each of these holds:
 ---
 
 ## 10. Current known limitations
+
+For the full, re-verified engineering backlog see
+[`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md). This section covers operator-facing
+limitations only.
 
 ### Player props are disabled
 - `EngineConfig.enable_props = False` by default.
@@ -479,7 +493,9 @@ Before clicking Scan or trusting any BUY, verify each of these holds:
   hourly cap budget after switching to live.
 - Self-heals after 60 minutes (records age out of the rolling window).
 - `AlertStateStore.prune_stale(max_age_hours)` exists but is not
-  scheduled to run automatically.
+  scheduled to run automatically (KNOWN_ISSUES R-13).
+- Saves are atomic (temp file + `os.replace`, commit `f73c033`), so a
+  crash mid-write no longer truncates the file and loses cooldowns.
 
 ### Polymarket and Kalshi prices move after the snapshot
 - Snapshot is a frozen-in-time view. PM and Kalshi orderbooks update continuously.
@@ -500,7 +516,7 @@ Before clicking Scan or trusting any BUY, verify each of these holds:
 
 ### Other notes
 - `routers/odds.py` (`/api/odds/tennis`, `/api/odds/matches`) is legacy tennis-only debug surface. Not used by the dashboard. Recently fixed for a NameError but otherwise dormant.
-- The Kalshi WebSocket consumer authenticates with `KALSHI_API_KEY` as the bearer header; if Kalshi rejects the auth (HTTP 401/403), the consumer stops trying. Check `monitor/status` if you expect WS-driven re-evaluation and don't see it.
+- The Kalshi WebSocket consumer authenticates with `KALSHI_API_KEY` as the bearer header; if Kalshi rejects the auth (HTTP 401/403), the consumer stops trying (KNOWN_ISSUES R-12: this raw-key header probably does not match Kalshi's signed-request auth). Other disconnects, including clean server closes, reconnect with exponential backoff (5s doubling to a 60s cap). Check `monitor/status` if you expect WS-driven re-evaluation and don't see it.
 - `backend/data/alert_state.json` persists alert-state records across restarts. This is intentional (so cooldown survives) but means stale records accumulate over time. The store has a `prune_stale(max_age_hours)` method but it is not currently called automatically.
 
 ---
@@ -525,6 +541,11 @@ Before clicking Scan or trusting any BUY, verify each of these holds:
 | `GET /api/monitor/status` | Scheduler + WS + poller status |
 | `GET /api/monitor/history` | Recent alert records |
 | `POST /api/monitor/test` | **Bypasses dry_run** — sends a real Pushover. Do not call until live alerts are authorized. |
+
+Paper-maker endpoints (`/api/maker/*`) and the complete reference are in
+[`OPERATIONS.md`](./OPERATIONS.md) §4. State-changing requests from a
+browser origin other than `localhost:3000` / `127.0.0.1:3000` are rejected
+with 403 by the origin guard (`backend/services/origin_guard.py`).
 
 ---
 
