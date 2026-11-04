@@ -24,7 +24,7 @@ from collections import Counter
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from services.maker.config import (
     MakerConfig,
@@ -253,6 +253,10 @@ class MakerConfigResponse(BaseModel):
     """Full runtime config view.  ``paper_only`` / ``platforms`` /
     ``market_types`` are surfaced so the caller can see they are locked,
     but they cannot be changed via POST."""
+    # Non-finite floats cannot be JSON-serialized; fail at model build time
+    # so the POST endpoint can validate before storing.
+    model_config = ConfigDict(allow_inf_nan=False)
+
     enabled: bool
     paper_only: bool
     platforms: list[str]
@@ -281,20 +285,27 @@ class MakerConfigUpdateRequest(BaseModel):
     the endpoint additionally clamps the resulting config to enforce the
     safety invariants regardless of input.
     """
+    # Reject Infinity / NaN / 1e309 at the request layer (422).  A
+    # non-finite value would otherwise be stored in the runtime singleton
+    # and then fail JSON serialization on every later GET/POST, and an
+    # infinite max_book_age_seconds would silently remove the book
+    # freshness gate.
+    model_config = ConfigDict(allow_inf_nan=False)
+
     enabled: bool | None = None
-    min_estimated_maker_edge: float | None = None
-    max_book_age_seconds: float | None = None
-    max_fd_age_seconds: float | None = None
-    require_min_spread: float | None = None
-    max_contracts_per_order: int | None = None
-    max_notional_per_order_usd: float | None = None
-    max_notional_per_market_usd: float | None = None
-    max_open_orders_total: int | None = None
-    max_open_orders_per_market: int | None = None
-    max_orders_per_hour: int | None = None
-    max_daily_notional_usd: float | None = None
-    default_ttl_seconds: int | None = None
-    cancel_before_event_offset_s: int | None = None
+    min_estimated_maker_edge: float | None = Field(default=None, ge=0)
+    max_book_age_seconds: float | None = Field(default=None, ge=0)
+    max_fd_age_seconds: float | None = Field(default=None, ge=0)
+    require_min_spread: float | None = Field(default=None, ge=0)
+    max_contracts_per_order: int | None = Field(default=None, ge=1)
+    max_notional_per_order_usd: float | None = Field(default=None, ge=0)
+    max_notional_per_market_usd: float | None = Field(default=None, ge=0)
+    max_open_orders_total: int | None = Field(default=None, ge=1)
+    max_open_orders_per_market: int | None = Field(default=None, ge=1)
+    max_orders_per_hour: int | None = Field(default=None, ge=1)
+    max_daily_notional_usd: float | None = Field(default=None, ge=0)
+    default_ttl_seconds: int | None = Field(default=None, ge=1)
+    cancel_before_event_offset_s: int | None = Field(default=None, ge=0)
 
 
 def _to_response(cfg: MakerConfig) -> MakerConfigResponse:
@@ -355,8 +366,11 @@ def update_maker_config_endpoint(req: MakerConfigUpdateRequest) -> MakerConfigRe
     }
     updated = dataclasses.replace(current, **safe_updates)
     updated = _enforce_safety(updated)
-    new = set_maker_config(updated)
-    return _to_response(new)
+    # Build (and thereby validate) the response BEFORE storing, so the
+    # endpoint never stores a config it cannot serialize.
+    response = _to_response(updated)
+    set_maker_config(updated)
+    return response
 
 
 @router.get("/maker/summary", response_model=MakerSummaryResponse)

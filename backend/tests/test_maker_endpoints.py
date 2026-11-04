@@ -1127,6 +1127,132 @@ class TestMakerConfigPostSafety:
         assert body["market_types"] == ["h2h"]
 
 
+class TestMakerConfigPostRejectsInvalidNumbers:
+    """Non-finite or obviously invalid numbers must be rejected with 422
+    BEFORE the runtime config is touched.  Regression: previously
+    ``Infinity`` was stored (removing the book-freshness gate) and then
+    every later GET/POST returned 500 because the value could not be
+    JSON-serialized.
+
+    Raw bodies are sent via ``content=`` because ``json=`` cannot encode
+    Infinity/NaN."""
+
+    @staticmethod
+    def _post_raw(client, body: str):
+        return client.post(
+            "/api/maker/config",
+            content=body,
+            headers={"Content-Type": "application/json"},
+        )
+
+    @pytest.mark.parametrize("body", [
+        '{"enabled": true, "max_book_age_seconds": Infinity}',
+        '{"enabled": true, "max_book_age_seconds": -Infinity}',
+        '{"enabled": true, "max_book_age_seconds": NaN}',
+        '{"enabled": true, "max_book_age_seconds": 1e309}',
+        '{"enabled": true, "max_fd_age_seconds": Infinity}',
+        '{"enabled": true, "min_estimated_maker_edge": NaN}',
+        '{"enabled": true, "require_min_spread": 1e309}',
+        '{"enabled": true, "max_notional_per_order_usd": Infinity}',
+        '{"enabled": true, "max_daily_notional_usd": NaN}',
+        '{"enabled": true, "max_book_age_seconds": -1}',
+        '{"enabled": true, "max_fd_age_seconds": -0.5}',
+        '{"enabled": true, "min_estimated_maker_edge": -0.05}',
+        '{"enabled": true, "require_min_spread": -0.01}',
+        '{"enabled": true, "max_notional_per_market_usd": -10}',
+        '{"enabled": true, "max_contracts_per_order": 0}',
+        '{"enabled": true, "max_open_orders_total": -1}',
+        '{"enabled": true, "max_open_orders_per_market": 0}',
+        '{"enabled": true, "max_orders_per_hour": 0}',
+        '{"enabled": true, "default_ttl_seconds": 0}',
+        '{"enabled": true, "cancel_before_event_offset_s": -1}',
+    ])
+    def test_invalid_number_rejected_and_config_unchanged(self, client_with_store, body):
+        from services.maker.config import get_maker_config
+        client, _, _ = client_with_store
+        before = get_maker_config()
+
+        resp = self._post_raw(client, body)
+        assert resp.status_code == 422
+
+        # Runtime config untouched — in particular, still disabled.
+        after = get_maker_config()
+        assert after == before
+        assert after.enabled is False
+        assert after.paper_only is True
+
+        # GET still serializes cleanly.
+        get_resp = client.get("/api/maker/config")
+        assert get_resp.status_code == 200
+        get_body = get_resp.json()
+        assert get_body["enabled"] is False
+        assert get_body["paper_only"] is True
+        assert get_body["max_book_age_seconds"] == pytest.approx(30.0)
+
+    def test_invalid_post_preserves_previous_runtime_values(self, client_with_store):
+        client, _, _ = client_with_store
+        ok = client.post("/api/maker/config", json={
+            "enabled": True, "max_book_age_seconds": 45.0,
+        })
+        assert ok.status_code == 200
+
+        bad = self._post_raw(client, '{"enabled": false, "max_book_age_seconds": Infinity}')
+        assert bad.status_code == 422
+
+        body = client.get("/api/maker/config").json()
+        assert body["enabled"] is True
+        assert body["max_book_age_seconds"] == pytest.approx(45.0)
+
+        # A subsequent valid POST still works (UI can turn maker off).
+        off = client.post("/api/maker/config", json={"enabled": False})
+        assert off.status_code == 200
+        assert off.json()["enabled"] is False
+
+    def test_422_body_names_finite_number_error(self, client_with_store):
+        client, _, _ = client_with_store
+        resp = self._post_raw(client, '{"max_book_age_seconds": Infinity}')
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert any(
+            d["type"] == "finite_number" and d["loc"][-1] == "max_book_age_seconds"
+            for d in detail
+        )
+
+    def test_endpoint_validates_before_storing(self, client_with_store):
+        """Defense in depth: even if a non-finite value bypassed request
+        validation (model_construct skips it), the endpoint must fail
+        before set_maker_config is reached."""
+        import pydantic
+        from routers.maker import (
+            MakerConfigUpdateRequest,
+            update_maker_config_endpoint,
+        )
+        from services.maker.config import get_maker_config
+
+        before = get_maker_config()
+        req = MakerConfigUpdateRequest.model_construct(
+            enabled=True, max_book_age_seconds=float("inf"),
+        )
+        # model_construct does not populate fields_set from kwargs the
+        # same way; mark them explicitly so exclude_unset keeps them.
+        req.__pydantic_fields_set__ = {"enabled", "max_book_age_seconds"}
+        with pytest.raises(pydantic.ValidationError):
+            update_maker_config_endpoint(req)
+        assert get_maker_config() == before
+        assert get_maker_config().enabled is False
+
+    def test_zero_ages_and_offset_still_accepted(self, client_with_store):
+        """Boundary: ge=0 fields accept 0 (fail-closed values)."""
+        client, _, _ = client_with_store
+        resp = client.post("/api/maker/config", json={
+            "max_book_age_seconds": 0,
+            "cancel_before_event_offset_s": 0,
+            "min_estimated_maker_edge": 0.0,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["enabled"] is False
+
+
 class TestMakerConfigRefreshIntegration:
     """The runtime config drives the normal refresh path: when enabled via
     POST, ``fetch_opportunities`` (called by snapshot.refresh_snapshot)
