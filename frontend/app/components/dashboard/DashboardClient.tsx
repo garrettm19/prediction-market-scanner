@@ -379,10 +379,10 @@ export function DashboardClient({ initialData }: Props) {
 
       {/* Toolbar */}
       <div
-        className="flex items-center justify-between px-4 py-2.5 rounded-lg border"
+        className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 rounded-lg border"
         style={{ background: "#0c1315", borderColor: "rgba(19,78,74,0.35)" }}
       >
-        <form onSubmit={handleSubmit} className="flex items-center gap-4">
+        <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-center gap-1.5">
             <label htmlFor="min-edge" className="font-mono text-[9px]" style={{ color: "#4b5563" }}>
               Min Edge
@@ -467,7 +467,7 @@ export function DashboardClient({ initialData }: Props) {
           </button>
         </form>
 
-        <div className="flex items-center gap-4 font-mono text-[9px]" style={{ color: "#374151" }}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[9px]" style={{ color: "#374151" }}>
           <span>
             {activeFilterCount > 0
               ? `${opportunities.length}/${allOpps.length} shown`
@@ -549,7 +549,7 @@ export function DashboardClient({ initialData }: Props) {
 
       {/* Filter bar */}
       <div
-        className="flex items-center gap-3 px-4 py-2 rounded-lg border"
+        className="flex flex-wrap items-center gap-3 px-4 py-2 rounded-lg border"
         style={{ background: "#0c1315", borderColor: "rgba(19,78,74,0.25)" }}
       >
         <span className="font-mono text-[8px] tracking-[0.15em] uppercase shrink-0" style={{ color: "#374151" }}>
