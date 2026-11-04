@@ -8,6 +8,12 @@ on the disabled default — flaky failures in the worst case, false greens in
 the best.  This autouse fixture resets the runtime config to ``None``
 around every test so each one starts from the pristine
 ``DEFAULT_MAKER_CONFIG`` (disabled, paper-only, Kalshi+H2H).
+
+``_isolate_alert_state_path`` redirects the default ``AlertStateStore``
+path (``services.monitor.state._DEFAULT_PATH``, normally
+``backend/data/alert_state.json``) to a per-test ``tmp_path`` so no test
+reads the developer's live cooldown / hourly-cap history or overwrites it
+via ``save()``.
 """
 from __future__ import annotations
 
@@ -20,3 +26,12 @@ def _reset_maker_runtime_config():
     reset_maker_config()
     yield
     reset_maker_config()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_alert_state_path(tmp_path, monkeypatch):
+    import services.monitor.state as alert_state
+    monkeypatch.setattr(
+        alert_state, "_DEFAULT_PATH", str(tmp_path / "alert_state.json")
+    )
+    yield

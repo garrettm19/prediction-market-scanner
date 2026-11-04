@@ -99,15 +99,12 @@ def _make_opp(
 
 def _make_manager(config: MonitorConfig | None = None) -> tuple[AlertManager, AlertStateStore, DryRunNotifier]:
     cfg = config or _make_config()
-    state = AlertStateStore(path=":memory:")  # won't persist
-    state._path = None  # disable file I/O
+    # Default path is redirected to a per-test tmp_path by the autouse
+    # fixture in tests/conftest.py, so this never touches backend/data.
+    state = AlertStateStore()
     notifier = DryRunNotifier()
     manager = AlertManager(config=cfg, state=state, notifier=notifier)
     return manager, state, notifier
-
-
-# Patch AlertStateStore.save to no-op for in-memory testing
-AlertStateStore.save = lambda self: None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -395,36 +392,31 @@ class TestRunCycle:
 
 class TestAlertStateStore:
     def test_upsert_creates_record(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         rec = store.upsert("test_key", platform="polymarket", event="Test")
         assert rec.key == "test_key"
         assert rec.platform == "polymarket"
 
     def test_upsert_updates_existing(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         store.upsert("test_key", platform="polymarket", current_edge=0.05)
         rec = store.upsert("test_key", current_edge=0.10)
         assert rec.current_edge == 0.10
         assert rec.platform == "polymarket"  # preserved from first upsert
 
     def test_alerts_sent_this_hour_prunes_old(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         # Add an alert timestamp from 2 hours ago
         store._alerts_this_hour = [time.time() - 7200]
         assert store.alerts_sent_this_hour() == 0
 
     def test_alerts_sent_this_hour_counts_recent(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         store._alerts_this_hour = [time.time() - 100, time.time() - 50]
         assert store.alerts_sent_this_hour() == 2
 
     def test_mark_all_inactive(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         store.upsert("k1", is_active=True)
         store.upsert("k2", is_active=True)
         store.mark_all_inactive()
@@ -441,3 +433,25 @@ class TestAlertStateStore:
         assert pruned == 1
         assert store.get("old") is None
         assert store.get("recent") is not None
+
+
+class TestAlertStatePathIsolation:
+    """Guard (testL0): tests must never touch backend/data/alert_state.json."""
+
+    def test_default_path_redirected_to_tmp(self, tmp_path):
+        import os
+        import services.monitor.state as alert_state
+
+        real = os.path.realpath(os.path.join(
+            os.path.dirname(alert_state.__file__), "..", "..", "data", "alert_state.json",
+        ))
+        store = AlertStateStore()
+        assert os.path.realpath(store._path) != real
+        assert os.path.realpath(store._path).startswith(os.path.realpath(str(tmp_path)))
+
+    def test_scheduler_state_uses_isolated_path(self, tmp_path):
+        import os
+        from services.monitor.scheduler import MonitorScheduler
+
+        s = MonitorScheduler(monitor_config=MonitorConfig(enabled=True, dry_run=True))
+        assert os.path.realpath(s.state._path).startswith(os.path.realpath(str(tmp_path)))
