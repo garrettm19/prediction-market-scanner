@@ -111,6 +111,7 @@ export interface OpportunitiesResponse {
   platforms_fetched: string[];
   updated_at: number | null;
   is_refreshing: boolean;
+  data_source?: string | null;      // "demo" | "live" (additive)
 }
 
 export interface BookStatus {
@@ -312,4 +313,8 @@ export interface SnapshotStatus {
   // the UI only displays them when present.
   degraded?: boolean | null;
   odds_failures?: string[] | number | null;
+  // True when the backend runs in offline demo mode (synthetic data).
+  demo_mode?: boolean | null;
+  // meta.data_source of the stored snapshot: "demo" | "live".
+  data_source?: string | null;
 }

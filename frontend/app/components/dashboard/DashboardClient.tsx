@@ -11,6 +11,7 @@ import { MarketDetailPanel } from "./MarketDetailPanel";
 import { TrackedPositions } from "./TrackedPositions";
 import { NotificationSettings, useMonitorState } from "./NotificationSettings";
 import { DataStatus } from "./DataStatus";
+import { DemoModeBanner } from "./DemoModeBanner";
 import { StatusStrip, isSnapshotStale, fmtAgo } from "./StatusStrip";
 import { PaperMakerControls } from "./PaperMakerControls";
 
@@ -76,6 +77,8 @@ export function DashboardClient({ initialData }: Props) {
   // Optional partial-failure signals (only rendered if the backend sends them).
   const [degraded, setDegraded] = useState<boolean | null>(null);
   const [oddsFailures, setOddsFailures] = useState<string[] | number | null>(null);
+  // Offline demo mode flag from /status (synthetic data banner).
+  const [demoMode, setDemoMode] = useState(false);
   // Visible error for user-initiated actions (scan, books toggle, auto monitor).
   const [actionError, setActionError] = useState<string | null>(null);
   // Bumped each time a scan transitions from is_refreshing=true to false.
@@ -171,6 +174,7 @@ export function DashboardClient({ initialData }: Props) {
         setBackendUnreachableSince(null);
         setDegraded(status.degraded ?? null);
         setOddsFailures(status.odds_failures ?? null);
+        setDemoMode(status.demo_mode === true);
 
         // Surface the full backend status to the UI
         setBackendRefreshing(status.is_refreshing);
@@ -351,6 +355,7 @@ export function DashboardClient({ initialData }: Props) {
 
   return (
     <main className="max-w-[1600px] mx-auto px-6 py-5 space-y-3">
+      <DemoModeBanner show={demoMode} />
       <StatusStrip
         isRefreshing={scanning || backendRefreshing}
         refreshStartedAt={refreshStartedAt}
