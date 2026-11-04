@@ -11,8 +11,16 @@ import { MarketDetailPanel } from "./MarketDetailPanel";
 import { TrackedPositions } from "./TrackedPositions";
 import { NotificationSettings, useMonitorState } from "./NotificationSettings";
 import { DataStatus } from "./DataStatus";
-import { StatusStrip } from "./StatusStrip";
+import { StatusStrip, isSnapshotStale, fmtAgo } from "./StatusStrip";
 import { PaperMakerControls } from "./PaperMakerControls";
+
+// Consecutive /status poll failures before the UI declares the backend
+// unreachable. Polling keeps retrying regardless.
+const BACKEND_UNREACHABLE_AFTER_FAILURES = 2;
+
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : "unknown error";
+}
 
 interface Props {
   initialData: OpportunitiesResponse | null;
@@ -61,6 +69,15 @@ export function DashboardClient({ initialData }: Props) {
   const [lastRefreshError, setLastRefreshError] = useState<string | null>(null);
   const [lastRefreshDuration, setLastRefreshDuration] = useState<number | null>(null);
   const [firstPollComplete, setFirstPollComplete] = useState(false);
+  // Backend reachability: set (unix seconds) once /status polling has failed
+  // BACKEND_UNREACHABLE_AFTER_FAILURES times in a row; cleared on success.
+  const [backendUnreachableSince, setBackendUnreachableSince] = useState<number | null>(null);
+  const pollFailuresRef = useRef(0);
+  // Optional partial-failure signals (only rendered if the backend sends them).
+  const [degraded, setDegraded] = useState<boolean | null>(null);
+  const [oddsFailures, setOddsFailures] = useState<string[] | number | null>(null);
+  // Visible error for user-initiated actions (scan, books toggle, auto monitor).
+  const [actionError, setActionError] = useState<string | null>(null);
   // Bumped each time a scan transitions from is_refreshing=true to false.
   // PaperMakerControls watches it to refetch the latest-run summary so the
   // counts reflect the freshest run without polling on its own.
@@ -110,14 +127,20 @@ export function DashboardClient({ initialData }: Props) {
           setPropsEnabled(cfg.props_enabled);
         }
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        setActionError(
+          `Couldn't load scan config from backend (${errMsg(e)}) — Books toggles show defaults and may not match the backend.`,
+        );
+      });
   }, []);
 
   const togglePlatform = useCallback((name: string, enabled: boolean) => {
-    // Optimistic UI flip first; revert on failure.
+    // Optimistic UI flip first; revert on failure and say why.
+    setActionError(null);
     setPlatformEnabled((prev) => ({ ...prev, [name]: enabled }));
-    updateScanConfig({ platforms: { [name]: { enabled } } }).catch(() => {
+    updateScanConfig({ platforms: { [name]: { enabled } } }).catch((e: unknown) => {
       setPlatformEnabled((prev) => ({ ...prev, [name]: !enabled }));
+      setActionError(`Couldn't ${enabled ? "enable" : "disable"} ${name}: ${errMsg(e)}. Toggle reverted.`);
     });
   }, []);
 
@@ -143,6 +166,12 @@ export function DashboardClient({ initialData }: Props) {
         const status = await fetchSnapshotStatus();
         if (!active) return;
 
+        // Backend answered → reachable again.
+        pollFailuresRef.current = 0;
+        setBackendUnreachableSince(null);
+        setDegraded(status.degraded ?? null);
+        setOddsFailures(status.odds_failures ?? null);
+
         // Surface the full backend status to the UI
         setBackendRefreshing(status.is_refreshing);
         setRefreshStartedAt(status.refresh_started_at ?? null);
@@ -159,17 +188,22 @@ export function DashboardClient({ initialData }: Props) {
           status.updated_at !== lastSeenUpdatedAt.current
         ) {
           const snap = await fetchSnapshot();
-          if (!active || !snap) return;
-          lastSeenUpdatedAt.current = status.updated_at;
-          setUpdatedAt(status.updated_at);
-          setData((prev) => {
-            if (selected) {
-              const key = oppKey(selected);
-              const match = snap.opportunities.find((o) => oppKey(o) === key);
-              if (match) setSelected(match);
-            }
-            return snap;
-          });
+          if (!active) return;
+          // A 204 (no snapshot after all) must not end the poll loop —
+          // skip the update and let the next tick retry.
+          if (snap) {
+            const updatedAtSec = status.updated_at;
+            lastSeenUpdatedAt.current = updatedAtSec;
+            setUpdatedAt(updatedAtSec);
+            setData(() => {
+              if (selected) {
+                const key = oppKey(selected);
+                const match = snap.opportunities.find((o) => oppKey(o) === key);
+                if (match) setSelected(match);
+              }
+              return snap;
+            });
+          }
         }
 
         // Backend confirms not refreshing → clear the optimistic local flag
@@ -181,7 +215,14 @@ export function DashboardClient({ initialData }: Props) {
           setScanRefreshKey((k) => k + 1);
         }
       } catch {
-        // Polling failure is silent — next tick will retry
+        // Network error, non-OK status, or request timeout (apiFetch).
+        // Keep retrying on the next tick; after repeated failures, show
+        // the backend as unreachable instead of presenting cached data as live.
+        if (!active) return;
+        pollFailuresRef.current += 1;
+        if (pollFailuresRef.current >= BACKEND_UNREACHABLE_AFTER_FAILURES) {
+          setBackendUnreachableSince((prev) => prev ?? Date.now() / 1000);
+        }
       }
       pollIntervalRef.current = nextInterval;
       if (active) timer = setTimeout(poll, nextInterval);
@@ -197,12 +238,14 @@ export function DashboardClient({ initialData }: Props) {
     // Belt-and-suspenders: even if the form is somehow submitted while no
     // book is enabled, do not fire a refresh.
     if (!Object.values(platformEnabled).some(Boolean)) return;
+    setActionError(null);
     setScanning(true);
     pollIntervalRef.current = 2_000;
-    refreshOpportunities().catch(() => {
-      // POST itself failed (e.g. backend unreachable). Drop optimistic flag —
-      // polling will retry. last_refresh_error stays driven by backend status.
+    refreshOpportunities().catch((e: unknown) => {
+      // POST itself failed (e.g. backend unreachable). Drop optimistic flag
+      // and say so — backend last_refresh_error is never set in this case.
       setScanning(false);
+      setActionError(`Scan request failed: ${errMsg(e)}`);
     });
   }, [scanning, backendRefreshing, platformEnabled]);
 
@@ -301,6 +344,11 @@ export function DashboardClient({ initialData }: Props) {
   const monitorCooldownMin = monitor.config?.cooldown_minutes ?? null;
   const monitorMaxPerHour = monitor.config?.max_alerts_per_hour ?? null;
 
+  // Freshness: only evaluated after mount (Date.now differs between SSR and client).
+  const backendUnreachable = backendUnreachableSince != null;
+  const snapshotStale = mounted && isSnapshotStale(updatedAt);
+  const freshnessWarning = backendUnreachable || snapshotStale;
+
   return (
     <main className="max-w-[1600px] mx-auto px-6 py-5 space-y-3">
       <StatusStrip
@@ -319,6 +367,9 @@ export function DashboardClient({ initialData }: Props) {
         monitorCooldownMin={monitorCooldownMin}
         monitorMaxPerHour={monitorMaxPerHour}
         propsEnabled={propsEnabled}
+        backendUnreachableSince={backendUnreachableSince}
+        degraded={degraded}
+        oddsFailures={oddsFailures}
       />
 
       {/* Toolbar */}
@@ -439,11 +490,16 @@ export function DashboardClient({ initialData }: Props) {
           <div className="h-3 w-px" style={{ background: "rgba(75,85,99,0.15)" }} />
           <button
             onClick={async () => {
+              setActionError(null);
               try {
                 if (monitorRunning) await stopMonitoring();
                 else await startMonitoring();
                 monitor.reload();
-              } catch { /* silent */ }
+              } catch (e: unknown) {
+                setActionError(
+                  `Couldn't ${monitorRunning ? "stop" : "start"} auto monitor: ${errMsg(e)}`,
+                );
+              }
             }}
             className="flex items-center gap-1.5 transition-all"
             title={monitorRunning ? "Stop auto-update" : "Start auto-update"}
@@ -464,17 +520,22 @@ export function DashboardClient({ initialData }: Props) {
             <span
               className="w-1.5 h-1.5 rounded-full"
               style={{
-                background: (scanning || backendRefreshing) ? "#f59e0b" : updatedAt ? "#4ade80" : "#374151",
-                boxShadow: (scanning || backendRefreshing) ? "0 0 4px #f59e0b" : updatedAt ? "0 0 4px #4ade80" : "none",
+                background: backendUnreachable ? "#f87171" : (scanning || backendRefreshing) ? "#f59e0b" : snapshotStale ? "#f59e0b" : updatedAt ? "#4ade80" : "#374151",
+                boxShadow: backendUnreachable ? "0 0 4px #f87171" : (scanning || backendRefreshing) ? "0 0 4px #f59e0b" : snapshotStale ? "0 0 4px #f59e0b" : updatedAt ? "0 0 4px #4ade80" : "none",
               }}
             />
-            <span suppressHydrationWarning>
-              {(scanning || backendRefreshing)
+            <span
+              suppressHydrationWarning
+              style={freshnessWarning ? { color: backendUnreachable ? "#f87171" : "#f59e0b" } : undefined}
+            >
+              {backendUnreachable
+                ? "Backend unreachable"
+                : (scanning || backendRefreshing)
                 ? "Refreshing live prices…"
                 : !mounted
                   ? ""
                   : updatedAt
-                    ? `Last updated ${timeAgo(new Date(updatedAt * 1000))}${lastRefreshDuration != null ? ` · last scan ${lastRefreshDuration.toFixed(0)}s` : ""}`
+                    ? `${snapshotStale ? "Stale · " : ""}Last updated ${timeAgo(new Date(updatedAt * 1000))}${lastRefreshDuration != null ? ` · last scan ${lastRefreshDuration.toFixed(0)}s` : ""}`
                     : "Waiting for data..."}
             </span>
           </div>
@@ -589,6 +650,54 @@ export function DashboardClient({ initialData }: Props) {
           </button>
         )}
       </div>
+
+      {/* Backend unreachable / stale snapshot — data shown may not be live */}
+      {(backendUnreachable || snapshotStale) && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border font-mono text-[10px]"
+          style={{
+            background: backendUnreachable ? "rgba(248,113,113,0.05)" : "rgba(245,158,11,0.05)",
+            borderColor: backendUnreachable ? "rgba(248,113,113,0.3)" : "rgba(245,158,11,0.3)",
+            color: backendUnreachable ? "#f87171" : "#f59e0b",
+          }}
+          suppressHydrationWarning
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: backendUnreachable ? "#f87171" : "#f59e0b" }}
+            aria-hidden="true"
+          />
+          <span>
+            {backendUnreachable
+              ? `Backend unreachable since ${new Date((backendUnreachableSince ?? 0) * 1000).toLocaleTimeString()} — retrying.`
+              : "Snapshot is stale."}
+            {hasSnapshot && updatedAt != null
+              ? ` Showing snapshot from ${fmtAgo(updatedAt)}; prices may be outdated.`
+              : ""}
+          </span>
+        </div>
+      )}
+
+      {/* Action error (scan / books toggle / auto monitor / scan-config load) */}
+      {actionError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 px-4 py-2 rounded-lg border font-mono text-[10px]"
+          style={{ background: "rgba(248,113,113,0.05)", borderColor: "rgba(248,113,113,0.3)", color: "#f87171" }}
+        >
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            aria-label="Dismiss error"
+            className="font-mono text-[11px]"
+            style={{ color: "#94a3b8" }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Error banner — keep table visible above/below if a snapshot exists */}
       {lastRefreshError && (

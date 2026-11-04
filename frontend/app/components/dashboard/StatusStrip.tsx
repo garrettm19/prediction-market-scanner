@@ -23,9 +23,26 @@ interface StatusStripProps {
   monitorMaxPerHour: number | null;
   // Props
   propsEnabled: boolean;
+  // Backend reachability / data freshness
+  /** Unix seconds since /status polling started failing; null when reachable. */
+  backendUnreachableSince?: number | null;
+  /** Optional partial-failure flags from /status (only shown when present). */
+  degraded?: boolean | null;
+  oddsFailures?: string[] | number | null;
 }
 
-function fmtAgo(unixSec: number): string {
+// Snapshot staleness window. The longest monitor refresh interval selectable
+// in NotificationSettings ("Refresh every", max 60 min) is the slowest normal
+// cadence; a snapshot older than 2x that cannot be explained by the schedule,
+// so the UI flags it as stale rather than showing it as fresh.
+export const MAX_REFRESH_INTERVAL_MINUTES = 60;
+export const SNAPSHOT_STALE_AFTER_SECONDS = 2 * MAX_REFRESH_INTERVAL_MINUTES * 60;
+
+export function isSnapshotStale(updatedAt: number | null, nowSec: number = Date.now() / 1000): boolean {
+  return updatedAt != null && nowSec - updatedAt > SNAPSHOT_STALE_AFTER_SECONDS;
+}
+
+export function fmtAgo(unixSec: number): string {
   const s = Math.max(0, Math.floor(Date.now() / 1000 - unixSec));
   if (s < 5) return "just now";
   if (s < 60) return `${s}s ago`;
@@ -57,7 +74,15 @@ export function StatusStrip(props: StatusStripProps) {
 
   // --- Scan pill ---
   let scanPill: PillSpec;
-  if (props.lastRefreshError) {
+  if (props.backendUnreachableSince != null) {
+    scanPill = {
+      label: "Backend",
+      value: "Unreachable",
+      tone: "danger",
+      title: "Status polling is failing; retrying. Data shown may be outdated.",
+      detail: props.updatedAt ? `cached ${fmtAgo(props.updatedAt)}` : null,
+    };
+  } else if (props.lastRefreshError) {
     scanPill = {
       label: "Scan",
       value: "Error",
@@ -72,6 +97,13 @@ export function StatusStrip(props: StatusStripProps) {
       tone: "warn",
       pulse: true,
       detail: props.refreshStartedAt ? `${fmtElapsed(props.refreshStartedAt)} elapsed` : null,
+    };
+  } else if (props.updatedAt && isSnapshotStale(props.updatedAt)) {
+    scanPill = {
+      label: "Scan",
+      value: `Stale · ${fmtAgo(props.updatedAt)}`,
+      tone: "warn",
+      title: `Snapshot is older than ${SNAPSHOT_STALE_AFTER_SECONDS / 60} minutes; prices may be outdated`,
     };
   } else if (props.updatedAt) {
     scanPill = {
@@ -147,6 +179,22 @@ export function StatusStrip(props: StatusStripProps) {
     };
   }
 
+  // --- Odds health pill (only when the backend reports it) ---
+  let oddsPill: PillSpec | null = null;
+  const failures = props.oddsFailures;
+  const failureCount = Array.isArray(failures) ? failures.length : typeof failures === "number" ? failures : 0;
+  if (props.degraded || failureCount > 0) {
+    oddsPill = {
+      label: "Odds",
+      value: "Degraded",
+      tone: "warn",
+      title: Array.isArray(failures) && failures.length > 0
+        ? `Odds fetch failures: ${failures.join(", ")}`
+        : "Backend reports a partial odds failure",
+      detail: failureCount > 0 ? `${failureCount} failed` : null,
+    };
+  }
+
   // --- Props pill ---
   const propsPill: PillSpec = props.propsEnabled
     ? { label: "Props", value: "On", tone: "warn" }
@@ -161,6 +209,7 @@ export function StatusStrip(props: StatusStripProps) {
       }}
     >
       <StatusPill {...scanPill} />
+      {oddsPill && <StatusPill {...oddsPill} />}
       <StatusPill {...booksPill} />
       <StatusPill {...alertsPill} />
       <StatusPill {...propsPill} />

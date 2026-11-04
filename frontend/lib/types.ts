@@ -308,4 +308,8 @@ export interface SnapshotStatus {
   opportunity_count: number;
   status_counts: Record<string, number>;
   platforms_fetched: string[];
+  // Optional partial-failure signals. The backend may not emit these yet;
+  // the UI only displays them when present.
+  degraded?: boolean | null;
+  odds_failures?: string[] | number | null;
 }
