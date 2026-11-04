@@ -39,3 +39,6 @@ desktop.ini
 
 # Logs
 *.log
+
+# Private, local-only notes (never committed)
+private/
