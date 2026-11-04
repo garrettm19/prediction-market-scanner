@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from routers import odds, opportunities, monitor, scan, maker
+from services.origin_guard import OriginGuardMiddleware
 from services.redaction import configure_log_redaction
 
 load_dotenv()
@@ -18,12 +19,18 @@ configure_log_redaction()
 
 app = FastAPI(title="MasG EV Tool API", version="2.0.0")
 
+# Browser origins allowed to call this local API (the Next.js dashboard).
+ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+# Added last so it runs first: CORS alone does not stop cross-site *simple*
+# POSTs from reaching handlers (see services/origin_guard.py).
+app.add_middleware(OriginGuardMiddleware, allowed_origins=ALLOWED_ORIGINS)
 
 
 def _json_safe(value: Any) -> Any:
