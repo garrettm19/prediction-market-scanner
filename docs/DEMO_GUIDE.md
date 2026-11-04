@@ -150,7 +150,6 @@ that the production path drops.
 ```bash
 curl -s localhost:8000/api/opportunities/status   # demo_mode, refresh state, degraded flag
 curl -s localhost:8000/api/opportunities/snapshot # opportunities + per-rule results
-curl -s -X POST localhost:8000/api/monitor/test   # 403: disabled in demo mode
 ```
 
 ### 6. Tests behind it (30 s)
