@@ -67,6 +67,17 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+### Offline demo mode (no API keys)
+
+`MASG_DEMO_MODE=1` runs the real pipeline (adapters → `NormalizedMarket` → Pass A → series dedup / ambiguity → Pass B → Kelly) on a deterministic, clearly fictional dataset (`backend/services/demo/fixtures.py`). There are no requests to Kalshi, Polymarket or The Odds API, no notifications and no orders. The dashboard shows a "Demo mode" banner. Monitor start/test, enabling the paper maker, historical odds and the legacy `/api/odds/*` endpoints return 403. Price history comes back empty.
+
+```bash
+./start-demo.sh                                    # backend + dashboard (Windows equivalents are in the script header)
+cd backend && python -m services.demo --all        # no Node: run the pipeline once, print a table
+```
+
+Loading the dashboard (or clicking Scan) fills the demo snapshot. SKIP rows are listed by `GET /api/opportunities/debug`. Polymarket demo markets (totals) show up only when the Polymarket "Books" toggle is on, the same as in live mode.
+
 ## How It Works
 
 ### Rule Engine Pipeline
