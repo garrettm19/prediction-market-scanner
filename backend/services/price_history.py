@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from services.adapters.kalshi import _is_draw_market
+
 logger = logging.getLogger(__name__)
 
 _GAMMA_BASE = os.getenv("GAMMA_API_BASE", "https://gamma-api.polymarket.com")
@@ -124,7 +126,11 @@ async def fetch_kalshi_history(
       best_sell = max(M1 yes_bid, 1 - M2 yes_ask)
       mid = (best_buy + best_sell) / 2
 
-    Falls back to single-market mid if no paired market is found.
+    Pairing is used only for a strict 2-way event (exactly two markets,
+    neither a draw/Tie).  3-way events (soccer, with a draw market) and
+    events with more than two markets use the single-market mid
+    (bid + ask) / 2 for every market, including the draw market itself.
+    Also falls back to single-market mid if no paired market is found.
     """
     api_key = os.getenv("KALSHI_API_KEY", "")
     if not api_key:
@@ -155,15 +161,27 @@ async def fetch_kalshi_history(
                     headers={"Authorization": api_key},
                 )
                 resp.raise_for_status()
-                siblings = resp.json().get("markets", [])
-                # Find the other non-draw market
+                siblings = resp.json().get("markets", []) or []
+                # The cross-market identity (No M2 == Yes M1) only holds
+                # for a strict 2-way event: exactly two non-draw markets,
+                # no draw/Tie market, and the primary is one of the two.
+                # In a 3-way (soccer) event, 1 - M2 prices (M1 OR draw), so
+                # every market — including the draw itself — must use its
+                # own single-market mid instead.
                 paired_ticker = None
-                for m in siblings:
-                    t = m.get("ticker", "")
-                    sub = (m.get("yes_sub_title") or "").lower()
-                    if t != market_ticker and sub not in ("tie", "draw"):
-                        paired_ticker = t
-                        break
+                has_draw = _is_draw_market(None, market_ticker) or any(
+                    _is_draw_market(m.get("yes_sub_title"), m.get("ticker"))
+                    for m in siblings
+                )
+                tickers = [m.get("ticker", "") for m in siblings]
+                if (
+                    not has_draw
+                    and len(tickers) == 2
+                    and market_ticker in tickers
+                ):
+                    paired_ticker = next(
+                        (t for t in tickers if t and t != market_ticker), None
+                    )
                 if paired_ticker:
                     paired_raw = await _fetch_kalshi_candles(
                         series_ticker, paired_ticker, api_key, client,
