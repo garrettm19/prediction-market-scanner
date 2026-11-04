@@ -2,7 +2,7 @@
 
 > Practical operator guide for running the scanner, interpreting output,
 > and deciding whether to act on a BUY. Companion to `README.md` (setup),
-> `CLAUDE.md` (project rules), and `PROJECT_CONTEXT.md` (architecture).
+> `../CLAUDE.md` (project rules), [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) (detailed project context) and [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 >
 > **Validated operating state (current default):**
 > - **Books**: Kalshi ON, Polymarket OFF. Polymarket is opt-in only via the
