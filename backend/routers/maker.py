@@ -26,6 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.demo.guards import ensure_not_demo
 from services.maker.config import (
     MakerConfig,
     get_maker_config,
@@ -358,6 +359,8 @@ def update_maker_config_endpoint(req: MakerConfigUpdateRequest) -> MakerConfigRe
     invariants (``paper_only=True``, ``platforms=["kalshi"]``,
     ``market_types=["h2h"]``) are still in place.
     """
+    if req.enabled:
+        ensure_not_demo("the paper maker cannot be enabled on synthetic demo data")
     current = get_maker_config()
     raw = req.model_dump(exclude_unset=True)
     safe_updates = {

@@ -10,15 +10,19 @@ GET /api/odds/matches
 """
 import dataclasses
 import logging
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
+from services.demo.guards import block_in_demo
 from services.redaction import redact_secrets
 from services.odds_provider import fetch_tennis_odds
 from services.events import fetch_tennis_markets
 from services.matcher import match_markets, MIN_CONFIDENCE
 
-router = APIRouter()
+# Legacy endpoints call The Odds API / Polymarket directly -> refused in demo mode.
+router = APIRouter(
+    dependencies=[Depends(block_in_demo("legacy odds endpoints call The Odds API / Polymarket"))],
+)
 logger = logging.getLogger(__name__)
 
 

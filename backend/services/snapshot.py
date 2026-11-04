@@ -16,10 +16,12 @@ Readers:
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 from dataclasses import dataclass
 
+from services.demo import is_demo_mode
 from services.opportunities import EvaluatedOpportunity
 from services.redaction import redact_secrets
 
@@ -126,6 +128,11 @@ async def refresh_snapshot(
     Per-sport Odds API failures reported by fetch_odds (meta["sports_failed"])
     are kept in the stored snapshot meta so /status can surface a degraded
     (partial-failure) refresh instead of presenting it as fully fresh.
+
+    Demo mode (MASG_DEMO_MODE=1, see services/demo): the same pipeline runs
+    on the synthetic demo adapters + odds fetcher, ``scope`` is ignored (no
+    odds cache), the paper maker is forced off, and meta["data_source"] is
+    "demo".  Otherwise meta["data_source"] is "live".
     """
     global _is_refreshing, _refresh_started_at, _last_trigger
     global _last_refresh_error, _last_refresh_duration_seconds
@@ -146,15 +153,37 @@ async def refresh_snapshot(
         _refresh_started_at = started
         _last_trigger = trigger
         try:
-            # Invalidate cache per scope
-            if scope == "all":
-                odds_cache.invalidate_all()
-            elif scope != "stale":
-                odds_cache.invalidate(scope)
-            # "stale" → no invalidation; TTL checks in fetch_odds handle it
+            if is_demo_mode():
+                # Offline demo: same pipeline, synthetic inputs.  No odds
+                # cache to invalidate, no network, maker forced off (the
+                # default MakerConfig is disabled + paper-only), props off.
+                from services.demo.fixtures import (
+                    demo_adapters_for_scan_config,
+                    make_demo_odds_fetcher,
+                )
+                from services.maker.config import MakerConfig
 
-            opportunities, meta = await fetch_opportunities(cfg=cfg)
-            meta = dict(meta)
+                if cfg.enable_props:
+                    cfg = dataclasses.replace(cfg, enable_props=False)
+                opportunities, meta = await fetch_opportunities(
+                    cfg=cfg,
+                    adapters=demo_adapters_for_scan_config(),
+                    odds_fetcher=make_demo_odds_fetcher(),
+                    maker_cfg=MakerConfig(),
+                )
+                meta = dict(meta)
+                meta["data_source"] = "demo"
+            else:
+                # Invalidate cache per scope
+                if scope == "all":
+                    odds_cache.invalidate_all()
+                elif scope != "stale":
+                    odds_cache.invalidate(scope)
+                # "stale" → no invalidation; TTL checks in fetch_odds handle it
+
+                opportunities, meta = await fetch_opportunities(cfg=cfg)
+                meta = dict(meta)
+                meta["data_source"] = "live"
             meta["sports_failed"] = list(meta.get("sports_failed") or [])
             snap = store_snapshot(opportunities, meta, trigger=trigger)
             _last_refresh_error = None

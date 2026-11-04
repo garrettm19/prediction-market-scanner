@@ -9,9 +9,10 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from services.demo.guards import block_in_demo
 from services.monitor.config import MonitorConfig, AlertPreset, apply_preset
 from services.monitor.scheduler import MonitorScheduler
 
@@ -139,7 +140,10 @@ async def update_monitor_config(req: MonitorConfigRequest) -> MonitorConfigRespo
     return await get_monitor_config()
 
 
-@router.post("/monitor/start")
+@router.post(
+    "/monitor/start",
+    dependencies=[Depends(block_in_demo("the monitor polls live markets and sends alerts"))],
+)
 async def start_monitoring() -> dict:
     """Start the monitoring loop. Stops any existing loop first."""
     cfg = _get_config()
@@ -208,7 +212,10 @@ async def get_alert_history() -> list[dict]:
     ]
 
 
-@router.post("/monitor/test")
+@router.post(
+    "/monitor/test",
+    dependencies=[Depends(block_in_demo("test notifications send a real Pushover message"))],
+)
 async def test_notification(req: TestNotificationRequest | None = None) -> dict:
     """Send a real test notification — always bypasses dry run."""
     from services.monitor.notifier import AlertPayload, PushoverNotifier

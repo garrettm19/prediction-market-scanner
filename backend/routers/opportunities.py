@@ -6,9 +6,11 @@ Two-pass rule engine: features first, then classify BUY/WATCH/SKIP.
 Each row includes full reasoning trace.
 """
 import logging
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
+from services.demo import is_demo_mode
+from services.demo.guards import block_in_demo
 from services.engine_config import EngineConfig
 from services.opportunities import (
     diagnose_pipeline,
@@ -121,6 +123,8 @@ class OpportunitiesResponse(BaseModel):
     platforms_fetched: list[str]
     updated_at: float | None = None
     is_refreshing: bool = False
+    # Additive: "demo" (offline synthetic data) | "live" | None (unknown)
+    data_source: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +231,7 @@ async def get_opportunities(
         platforms_fetched=meta.get("platforms_fetched", []),
         updated_at=updated_at,
         is_refreshing=is_refreshing(),
+        data_source=meta.get("data_source"),
     )
 
 
@@ -312,6 +317,7 @@ async def get_snapshot_opportunities(
         platforms_fetched=meta.get("platforms_fetched", []),
         updated_at=snapshot.updated_at,
         is_refreshing=is_refreshing(),
+        data_source=meta.get("data_source"),
     )
 
 
@@ -333,6 +339,11 @@ class SnapshotStatusResponse(BaseModel):
     # (expired odds are evicted, never served as truth).
     odds_failures: list[dict] = []
     degraded: bool = False
+    # Additive: True when the backend runs in offline demo mode
+    # (MASG_DEMO_MODE=1) -- synthetic data, no external requests.
+    demo_mode: bool = False
+    # Additive: meta["data_source"] of the stored snapshot ("demo" | "live").
+    data_source: str | None = None
 
 
 def _build_status_response() -> SnapshotStatusResponse:
@@ -352,6 +363,7 @@ def _build_status_response() -> SnapshotStatusResponse:
             opportunity_count=0,
             status_counts={},
             platforms_fetched=[],
+            demo_mode=is_demo_mode(),
         )
     return SnapshotStatusResponse(
         has_snapshot=True,
@@ -367,6 +379,8 @@ def _build_status_response() -> SnapshotStatusResponse:
         platforms_fetched=snapshot.meta.get("platforms_fetched", []),
         odds_failures=list(snapshot.meta.get("sports_failed") or []),
         degraded=bool(snapshot.meta.get("sports_failed")),
+        demo_mode=is_demo_mode(),
+        data_source=snapshot.meta.get("data_source"),
     )
 
 
@@ -438,7 +452,13 @@ async def get_price_history(
     platform: str = Query(..., description="Platform name (polymarket, kalshi)"),
     market_id: str = Query(..., description="Platform-specific market ID or ticker"),
 ) -> dict:
-    """Fetch price history for a specific market."""
+    """Fetch price history for a specific market.
+
+    Demo mode: returns no points (demo markets are synthetic and have no
+    Kalshi / Polymarket history; no external call is made).
+    """
+    if is_demo_mode():
+        return {"platform": platform, "market_id": market_id, "points": [], "count": 0}
     points = await fetch_price_history(platform, market_id)
     return {
         "platform": platform,
@@ -448,7 +468,10 @@ async def get_price_history(
     }
 
 
-@router.get("/opportunities/historical-odds")
+@router.get(
+    "/opportunities/historical-odds",
+    dependencies=[Depends(block_in_demo("historical odds require The Odds API (paid request)"))],
+)
 async def get_historical_odds(
     sport_key: str = Query(..., description="Odds API sport key (e.g. 'icehockey_nhl')"),
     event_id: str = Query(..., description="Odds API event ID"),
@@ -488,6 +511,17 @@ async def debug_opportunities(
         buy_threshold=buy_threshold,
     )
     try:
+        if is_demo_mode():
+            # Same diagnostic pipeline on the synthetic demo inputs (all demo
+            # platforms, mirroring diagnose_pipeline's unfiltered default).
+            from services.demo.fixtures import demo_adapters, make_demo_odds_fetcher
+            result = await diagnose_pipeline(
+                cfg=cfg,
+                adapters=demo_adapters(),
+                odds_fetcher=make_demo_odds_fetcher(),
+            )
+            result["data_source"] = "demo"
+            return result
         return await diagnose_pipeline(cfg=cfg)
     except Exception as exc:
         logger.error("Debug pipeline failed: %s", redact_secrets(exc))
