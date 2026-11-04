@@ -23,13 +23,6 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    env:
-      # The suite must never need real credentials. Leave provider keys unset
-      # and point proxies at a closed port so any accidental outbound HTTP
-      # request fails fast instead of reaching a paid API.
-      HTTP_PROXY: http://127.0.0.1:9
-      HTTPS_PROXY: http://127.0.0.1:9
-      NO_PROXY: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,10 +33,15 @@ jobs:
             backend/requirements.txt
             backend/requirements-dev.txt
       - name: Install dependencies
-        run: |
-          # Dependencies are the only thing allowed to come from the network.
-          HTTP_PROXY= HTTPS_PROXY= pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt
       - name: Run pytest
+        # The suite must never need real credentials. Provider keys stay unset
+        # and proxies point at a closed port, so any accidental outbound HTTP
+        # request fails fast instead of reaching a paid API.
+        env:
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: ""
         run: python -m pytest -q
       - name: Verify the suite left no runtime files behind
         run: |
