@@ -1,5 +1,7 @@
 # Prediction Market Scanner
 
+[![CI](https://github.com/garrettm19/prediction-market-scanner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/garrettm19/prediction-market-scanner/actions/workflows/ci.yml)
+
 Prediction Market Scanner compares sports prices on two prediction-market
 exchanges (**Kalshi** and **Polymarket**) with sportsbook odds from **FanDuel**
 (via The Odds API) to find markets that look mispriced. It matches each
