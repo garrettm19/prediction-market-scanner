@@ -18,7 +18,7 @@ opportunity appears.
 It does **not** execute trades. It is a discovery + decision-support tool.
 Final betting is manual via the platform link.
 
-The owner-operator is the user (Mason / mgarrett620@gmail.com), running it
+The owner-operator is the user (Mason), running it
 locally on Windows 11. There is no deployment, no auth, no multi-tenant
 concern. CORS is locked to `localhost:3000`.
 
