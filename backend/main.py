@@ -3,9 +3,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from routers import odds, opportunities, monitor, scan, maker
+from services.redaction import configure_log_redaction
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
+# httpx logs every request URL at INFO, and Odds API calls carry ?apiKey=...
+# Keep the request logs but mask credential query params.
+configure_log_redaction()
 
 app = FastAPI(title="MasG EV Tool API", version="2.0.0")
 

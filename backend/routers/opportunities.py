@@ -17,6 +17,7 @@ from services.opportunities import (
 from services.price_history import fetch_price_history
 from services.odds_provider import fetch_historical_odds
 from services.rule_engine import POLICY_TABLE
+from services.redaction import redact_secrets
 from services.snapshot import (
     get_snapshot,
     refresh_snapshot,
@@ -148,12 +149,15 @@ async def get_opportunities(
     if snapshot is None:
         # Cold start — no snapshot yet, run pipeline once with defaults
         try:
-            snap = await refresh_snapshot(trigger="cold_start")
+            # only_if_missing: concurrent cold-start requests queue on the
+            # refresh lock; the first one runs the pipeline and the rest
+            # reuse its snapshot instead of re-running it back to back.
+            snap = await refresh_snapshot(trigger="cold_start", only_if_missing=True)
             opportunities, meta, updated_at = snap.opportunities, snap.meta, snap.updated_at
         except ValueError as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
+            raise HTTPException(status_code=503, detail=redact_secrets(exc))
         except Exception as exc:
-            logger.error("Opportunities pipeline failed: %s", exc)
+            logger.error("Opportunities pipeline failed: %s", redact_secrets(exc))
             raise HTTPException(status_code=502, detail="Failed to build opportunities")
     else:
         opportunities = snapshot.opportunities
@@ -323,6 +327,12 @@ class SnapshotStatusResponse(BaseModel):
     opportunity_count: int
     status_counts: dict[str, int]
     platforms_fetched: list[str]
+    # Additive: per-sport Odds API failures from the last successful snapshot
+    # (fetch_odds meta["sports_failed"]).  degraded=True means at least one
+    # sport's FanDuel odds could not be refreshed, so its events are absent
+    # (expired odds are evicted, never served as truth).
+    odds_failures: list[dict] = []
+    degraded: bool = False
 
 
 def _build_status_response() -> SnapshotStatusResponse:
@@ -355,6 +365,8 @@ def _build_status_response() -> SnapshotStatusResponse:
         opportunity_count=len(snapshot.opportunities),
         status_counts=snapshot.meta.get("status_counts", {}),
         platforms_fetched=snapshot.meta.get("platforms_fetched", []),
+        odds_failures=list(snapshot.meta.get("sports_failed") or []),
+        degraded=bool(snapshot.meta.get("sports_failed")),
     )
 
 
@@ -478,5 +490,5 @@ async def debug_opportunities(
     try:
         return await diagnose_pipeline(cfg=cfg)
     except Exception as exc:
-        logger.error("Debug pipeline failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Debug pipeline failed: %s", redact_secrets(exc))
+        raise HTTPException(status_code=500, detail=redact_secrets(exc))

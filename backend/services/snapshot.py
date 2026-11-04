@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass
 
 from services.opportunities import EvaluatedOpportunity
+from services.redaction import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ async def refresh_snapshot(
     trigger: str = "manual",
     scope: str = "stale",
     cfg=None,
+    only_if_missing: bool = False,
 ) -> OpportunitySnapshot:
     """
     Run the pipeline and store the result as the new snapshot.
@@ -115,6 +117,15 @@ async def refresh_snapshot(
     Acquires _refresh_lock, manages is_refreshing/last_trigger/started_at/
     duration/error metadata centrally so /status reflects every refresh
     regardless of which caller initiated it.
+
+    only_if_missing (cold-start path): after acquiring _refresh_lock, if a
+    snapshot was stored while this caller was waiting (e.g. by a concurrent
+    cold-start request or a background refresh), return it instead of
+    running the full pipeline again.
+
+    Per-sport Odds API failures reported by fetch_odds (meta["sports_failed"])
+    are kept in the stored snapshot meta so /status can surface a degraded
+    (partial-failure) refresh instead of presenting it as fully fresh.
     """
     global _is_refreshing, _refresh_started_at, _last_trigger
     global _last_refresh_error, _last_refresh_duration_seconds
@@ -129,6 +140,8 @@ async def refresh_snapshot(
     started = time.time()
 
     async with _refresh_lock:
+        if only_if_missing and _snapshot is not None:
+            return _snapshot
         _is_refreshing = True
         _refresh_started_at = started
         _last_trigger = trigger
@@ -141,12 +154,17 @@ async def refresh_snapshot(
             # "stale" → no invalidation; TTL checks in fetch_odds handle it
 
             opportunities, meta = await fetch_opportunities(cfg=cfg)
+            meta = dict(meta)
+            meta["sports_failed"] = list(meta.get("sports_failed") or [])
             snap = store_snapshot(opportunities, meta, trigger=trigger)
             _last_refresh_error = None
             return snap
         except Exception as exc:
             # Record so /status surfaces the failure for any caller path.
-            _last_refresh_error = f"{type(exc).__name__}: {str(exc)[:300]}"
+            # Redact before truncation so a credential is never half-kept.
+            _last_refresh_error = (
+                f"{type(exc).__name__}: {redact_secrets(exc)[:300]}"
+            )
             raise
         finally:
             _last_refresh_duration_seconds = time.time() - started

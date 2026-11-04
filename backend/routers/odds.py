@@ -13,6 +13,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
+from services.redaction import redact_secrets
 from services.odds_provider import fetch_tennis_odds
 from services.events import fetch_tennis_markets
 from services.matcher import match_markets, MIN_CONFIDENCE
@@ -114,7 +115,7 @@ async def get_tennis_odds(
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
-        logger.error(f"Odds fetch failed: {exc}")
+        logger.error(f"Odds fetch failed: {redact_secrets(exc)}")
         raise HTTPException(status_code=502, detail="Failed to fetch odds from The Odds API")
 
     if meta.get("quota_remaining"):
@@ -165,7 +166,7 @@ async def get_matched_markets(
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
-        logger.error(f"Match fetch failed: {exc}")
+        logger.error(f"Match fetch failed: {redact_secrets(exc)}")
         raise HTTPException(status_code=502, detail="Failed to fetch data for matching")
 
     if meta.get("quota_remaining"):
