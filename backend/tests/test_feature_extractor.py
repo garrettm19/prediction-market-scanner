@@ -885,3 +885,97 @@ class TestBestBidAskPassThrough:
         assert yes_feat.best_ask == pytest.approx(0.60)
         assert yes_feat.best_bid_market_id == "K1"
         assert yes_feat.best_bid_contract_side == "yes"
+
+
+# ---------------------------------------------------------------------------
+# Adversarial: an unbuyable NO side (no_ask >= 0.99) must not be re-priced
+# at 1 - yes and surfaced as BUY.
+# ---------------------------------------------------------------------------
+
+class TestUnbuyableNoSideNotSynthesized:
+    """Previously reproduced false positive: single-market Kalshi fallback with
+    Sinner yes_ask 0.40, no YES bids → no_ask 1.00.  _parse_prices rewrote NO
+    to 0.60 and the Alcaraz (complement) side was classified BUY at edge
+    ~0.056 although the only executable NO price was 1.00."""
+
+    @staticmethod
+    def _setup(no_ask: str | None):
+        from datetime import datetime, timedelta, timezone
+        from services.adapters.kalshi import _single_market_fallback
+
+        d = datetime.now(timezone.utc) + timedelta(days=6)
+        et = f"KXATPMATCH-{d:%y}{d:%b}{d:%d}SINALC".upper()
+        commence = d.strftime("%Y-%m-%dT20:00:00Z")
+        raw = {
+            "ticker": et + "-SIN",
+            "event_ticker": et,
+            "title": "Will Jannik Sinner win the Sinner vs Alcaraz : Final match?",
+            "yes_sub_title": "Jannik Sinner",
+            "yes_ask_dollars": "0.40",
+            "yes_bid_dollars": "0",
+            "no_bid_dollars": "0.60",
+            "liquidity_dollars": "500",
+            "close_time": "2026-12-24T00:00:00Z",
+        }
+        if no_ask is not None:
+            raw["no_ask_dollars"] = no_ask
+        market = _single_market_fallback(raw, "KXATPMATCH", "atp")
+        assert market is not None
+        event = _make_event(
+            home="Jannik Sinner", away="Carlos Alcaraz",
+            sport_key="tennis_atp_finals", commence_time=commence,
+            home_odds=190, away_odds=-220,
+        )
+        return market, event
+
+    def test_parse_prices_passes_through_real_no_at_one(self):
+        from services.feature_extractor import _parse_prices
+        m = _make_market(prices=["0.40", "1.0"])
+        assert _parse_prices(m) == (0.40, 1.0)
+        m = _make_market(prices=["0.40", "0.995"])
+        assert _parse_prices(m) == (0.40, 0.995)
+
+    def test_parse_prices_still_synthesizes_missing_no(self):
+        from services.feature_extractor import _parse_prices
+        for no in ("0", "0.0", "-1", "0.005"):
+            m = _make_market(prices=["0.40", no])
+            assert _parse_prices(m) == (0.40, 0.60)
+
+    def test_parse_prices_unparsable_still_rejected(self):
+        from services.feature_extractor import _parse_prices
+        assert _parse_prices(_make_market(prices=["0.40", "n/a"])) is None
+
+    def test_complement_side_not_buy_or_watch_when_no_ask_is_one(self):
+        from services.rule_engine import evaluate_rules
+        cfg = EngineConfig()
+        market, event = self._setup(no_ask="1.0000")
+        assert market.outcome_prices == ["0.4", "1.0"]
+        features = extract_features(market, event, cfg)
+        alc = next(f for f in features if f.side == "Carlos Alcaraz")
+        assert alc.pm_price == pytest.approx(1.0)
+        assert alc.price_in_range is False
+        assert alc.prices_internally_consistent is False
+        status, _ = evaluate_rules(alc, cfg)
+        assert status == "SKIP"
+
+    def test_yes_side_pricing_unaffected(self):
+        cfg = EngineConfig()
+        market, event = self._setup(no_ask="1.0000")
+        features = extract_features(market, event, cfg)
+        sin = next(f for f in features if f.side == "Jannik Sinner")
+        assert sin.outcome_aligned is True
+        assert sin.pm_price == pytest.approx(0.40)
+        assert sin.price_in_range is True
+        # Edge/p_true computed exactly as before (from the YES ask).
+        assert sin.edge == pytest.approx(round(sin.p_true - sin.pm_price_effective, 4))
+
+    def test_missing_no_ask_still_synthesized_downstream(self):
+        """no_ask absent → adapter synthesizes 1 - yes; behaviour unchanged."""
+        cfg = EngineConfig()
+        market, event = self._setup(no_ask=None)
+        assert market.outcome_prices == ["0.4", "0.6"]
+        features = extract_features(market, event, cfg)
+        alc = next(f for f in features if f.side == "Carlos Alcaraz")
+        assert alc.pm_price == pytest.approx(0.60)
+        assert alc.price_in_range is True
+        assert alc.prices_internally_consistent is True
