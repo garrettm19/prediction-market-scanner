@@ -37,7 +37,7 @@ def _make_event(
     away: str = "Jannik Sinner",
     event_id: str = "ev1",
     sport_key: str = "tennis_atp_french_open",
-    commence_time: str = "2026-06-01T12:00:00Z",
+    commence_time: str = "2099-06-01T12:00:00Z",
     home_odds: int = -180,
     away_odds: int = 150,
 ) -> TennisOddsEvent:
@@ -67,7 +67,7 @@ def _make_market(
     market_id: str = "m1",
     market_type: str = "h2h",
     prices: list[str] | None = None,
-    end_date: str | None = "2026-06-01T18:00:00Z",
+    end_date: str | None = "2099-06-01T18:00:00Z",
 ) -> NormalizedMarket:
     return NormalizedMarket(
         platform="polymarket",
@@ -147,24 +147,24 @@ class TestNameScore:
 
 class TestDateScore:
     def test_same_time(self):
-        score, delta = _date_score("2026-06-01T12:00:00Z", "2026-06-01T12:00:00Z")
+        score, delta = _date_score("2099-06-01T12:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 1.0
         assert delta == pytest.approx(0.0, abs=0.01)
 
     def test_within_6h(self):
-        score, _ = _date_score("2026-06-01T17:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-06-01T17:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 1.0
 
     def test_within_24h(self):
-        score, _ = _date_score("2026-06-02T10:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-06-02T10:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 0.95
 
     def test_within_7days(self):
-        score, _ = _date_score("2026-06-06T12:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-06-06T12:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 0.85
 
     def test_within_21days(self):
-        score, _ = _date_score("2026-06-20T12:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-06-20T12:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 0.70
 
     def test_21day_confidence_below_buy_threshold(self):
@@ -178,13 +178,13 @@ class TestDateScore:
         from services.matcher import _date_score as matcher_date_score
 
         cases = [
-            ("2026-06-01T12:00:00Z", "2026-06-01T12:00:00Z"),   # 0h
-            ("2026-06-01T17:00:00Z", "2026-06-01T12:00:00Z"),   # 5h
-            ("2026-06-02T10:00:00Z", "2026-06-01T12:00:00Z"),   # 22h
-            ("2026-06-06T12:00:00Z", "2026-06-01T12:00:00Z"),   # 5d
-            ("2026-06-20T12:00:00Z", "2026-06-01T12:00:00Z"),   # 19d
-            ("2026-08-01T12:00:00Z", "2026-06-01T12:00:00Z"),   # >21d
-            (None, "2026-06-01T12:00:00Z"),                      # missing
+            ("2099-06-01T12:00:00Z", "2099-06-01T12:00:00Z"),   # 0h
+            ("2099-06-01T17:00:00Z", "2099-06-01T12:00:00Z"),   # 5h
+            ("2099-06-02T10:00:00Z", "2099-06-01T12:00:00Z"),   # 22h
+            ("2099-06-06T12:00:00Z", "2099-06-01T12:00:00Z"),   # 5d
+            ("2099-06-20T12:00:00Z", "2099-06-01T12:00:00Z"),   # 19d
+            ("2099-08-01T12:00:00Z", "2099-06-01T12:00:00Z"),   # >21d
+            (None, "2099-06-01T12:00:00Z"),                      # missing
         ]
         for end_date, commence_time in cases:
             fe_score, _ = _date_score(end_date, commence_time)
@@ -195,16 +195,16 @@ class TestDateScore:
             )
 
     def test_beyond_21days(self):
-        score, _ = _date_score("2026-08-01T12:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-08-01T12:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 0.0
 
     def test_missing_end_date(self):
-        score, delta = _date_score(None, "2026-06-01T12:00:00Z")
+        score, delta = _date_score(None, "2099-06-01T12:00:00Z")
         assert score == 0.5
         assert delta is None
 
     def test_invalid_date(self):
-        score, delta = _date_score("not-a-date", "2026-06-01T12:00:00Z")
+        score, delta = _date_score("not-a-date", "2099-06-01T12:00:00Z")
         assert score == 0.5
 
 
@@ -487,7 +487,7 @@ class TestExtractFeatures:
             away_player="Jannik Sinner",
             home_player_norm="carlos alcaraz",
             away_player_norm="jannik sinner",
-            commence_time="2026-06-01T12:00:00Z",
+            commence_time="2099-06-01T12:00:00Z",
             bookmakers=[],
         )
         features = extract_features(market, event, EngineConfig())
@@ -545,14 +545,14 @@ class TestExtractFeatures:
             away_player="Jannik Sinner",
             home_player_norm="carlos alcaraz",
             away_player_norm="jannik sinner",
-            commence_time="2026-06-01T12:00:00Z",
+            commence_time="2099-06-01T12:00:00Z",
             bookmakers=[
                 BookmakerLine(
                     bookmaker_key="draftkings",
                     bookmaker_title="DraftKings",
                     home_odds=-180,
                     away_odds=150,
-                    last_update="2026-06-01T12:00:00Z",
+                    last_update="2099-06-01T12:00:00Z",
                 )
             ],
         )
@@ -579,14 +579,14 @@ class TestExtractFeatures:
             away_player="Jannik Sinner",
             home_player_norm=normalize_player_name("Félix Auger-Aliassime"),
             away_player_norm=normalize_player_name("Jannik Sinner"),
-            commence_time="2026-06-01T12:00:00Z",
+            commence_time="2099-06-01T12:00:00Z",
             bookmakers=[
                 BookmakerLine(
                     bookmaker_key="fanduel",
                     bookmaker_title="FanDuel",
                     home_odds=-150,
                     away_odds=130,
-                    last_update="2026-06-01T12:00:00Z",
+                    last_update="2099-06-01T12:00:00Z",
                 )
             ],
         )
@@ -626,14 +626,14 @@ class TestExtractFeatures:
             away_player="Jannik Sinner",
             home_player_norm=normalize_player_name("Jannik O'Sullivan"),
             away_player_norm=normalize_player_name("Jannik Sinner"),
-            commence_time="2026-06-01T12:00:00Z",
+            commence_time="2099-06-01T12:00:00Z",
             bookmakers=[
                 BookmakerLine(
                     bookmaker_key="fanduel",
                     bookmaker_title="FanDuel",
                     home_odds=110,
                     away_odds=-130,
-                    last_update="2026-06-01T12:00:00Z",
+                    last_update="2099-06-01T12:00:00Z",
                 )
             ],
         )
@@ -671,7 +671,7 @@ class TestPlatformCostBuffer:
             url=None,
             timestamp=None,
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.55", "0.45"],
             event_slug="KXTEST-26JUN01ALCSNN",
         )
@@ -703,7 +703,7 @@ class TestPlatformCostBuffer:
             url=None,
             timestamp=None,
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.55", "0.45"],
             event_slug="KXTEST-26JUN01ALCSNN",
         )
@@ -748,9 +748,9 @@ class TestBestBidAskPassThrough:
             price=0.60,
             liquidity=500.0,
             url="https://kalshi.com/markets/test",
-            timestamp="2026-06-01T18:00:00Z",
+            timestamp="2099-06-01T18:00:00Z",
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.60", "0.40"],
             event_slug="test",
             best_bid=best_bid,
@@ -814,7 +814,7 @@ class TestBestBidAskPassThrough:
             url=None,
             timestamp=None,
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.55", "0.45"],
             event_slug="test",
         )
@@ -863,7 +863,7 @@ class TestBestBidAskPassThrough:
             url=None,
             timestamp=None,
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.60", "0.40"],
             event_slug="test",
             bid_ask_spread=0.02,

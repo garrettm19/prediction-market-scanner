@@ -35,13 +35,13 @@ def _soccer_event(
         away_player=away,
         home_player_norm=normalize_name(home),
         away_player_norm=normalize_name(away),
-        commence_time="2026-06-01T20:00:00Z",
+        commence_time="2099-06-01T20:00:00Z",
         bookmakers=[BookmakerLine(
             bookmaker_key="fanduel",
             bookmaker_title="FanDuel",
             home_odds=home_odds,
             away_odds=away_odds,
-            last_update="2026-06-01T20:00:00Z",
+            last_update="2099-06-01T20:00:00Z",
             draw_odds=draw_odds,
         )],
     )
@@ -61,13 +61,13 @@ def _tennis_event(
         away_player=away,
         home_player_norm=normalize_name(home),
         away_player_norm=normalize_name(away),
-        commence_time="2026-06-01T12:00:00Z",
+        commence_time="2099-06-01T12:00:00Z",
         bookmakers=[BookmakerLine(
             bookmaker_key="fanduel",
             bookmaker_title="FanDuel",
             home_odds=home_odds,
             away_odds=away_odds,
-            last_update="2026-06-01T12:00:00Z",
+            last_update="2099-06-01T12:00:00Z",
             draw_odds=None,
         )],
     )
@@ -78,7 +78,7 @@ def _market(question: str, prices=None) -> NormalizedMarket:
         platform="polymarket", market_id="m1", event=question,
         market_type="h2h", side="", line=None, price=0.55,
         liquidity=5000.0, url=None, timestamp=None,
-        question=question, end_date="2026-06-02T06:00:00Z",
+        question=question, end_date="2099-06-02T06:00:00Z",
         outcome_prices=prices or ["0.42", "0.58"], event_slug="test",
     )
 

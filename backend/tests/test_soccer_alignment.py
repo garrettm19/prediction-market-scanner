@@ -39,7 +39,10 @@ def _event(home: str, away: str, sport: str = "soccer_epl", **kw) -> TennisOddsE
         away_player=away,
         home_player_norm=normalize_name(home),
         away_player_norm=normalize_name(away),
-        commence_time="2026-06-01T20:00:00Z",
+        # Far-future so the fixture is never "live": a past commence_time
+        # sets is_live=True and the CRITICAL EVENT_LIVE rule would SKIP
+        # every candidate, masking the rule a test actually targets.
+        commence_time=kw.get("commence_time", "2099-06-01T20:00:00Z"),
         bookmakers=[BookmakerLine(
             bookmaker_key="fanduel", bookmaker_title="FanDuel",
             home_odds=kw.get("home_odds", -150),
@@ -50,7 +53,7 @@ def _event(home: str, away: str, sport: str = "soccer_epl", **kw) -> TennisOddsE
             # for the common case; tests that want to exercise the
             # missing-draw guard explicitly pass draw_odds=None.
             draw_odds=kw.get("draw_odds", 240),
-            last_update="2026-06-01T20:00:00Z",
+            last_update="2099-06-01T20:00:00Z",
         )],
     )
 
@@ -60,7 +63,7 @@ def _market(question: str, prices=None, platform="polymarket") -> NormalizedMark
         platform=platform, market_id="m1", event=question,
         market_type="h2h", side="", line=None, price=0.55,
         liquidity=5000.0, url=None, timestamp=None,
-        question=question, end_date="2026-06-02T06:00:00Z",
+        question=question, end_date="2099-06-02T06:00:00Z",
         outcome_prices=prices or ["0.55", "0.45"], event_slug="test",
     )
 
@@ -418,10 +421,37 @@ class TestSoccerMissingDrawGuard:
                        sport="soccer_usa_mls",
                        home_odds=190, away_odds=130, draw_odds=None)
         features = extract_features(philly_market, event, cfg)
+        assert len(features) >= 1
         for f in features:
             status, _ = evaluate_rules(f, cfg)
             # No row may reach BUY; phantom EV blocked at the source.
             assert status != "BUY"
+            assert status == "SKIP"
+            # The SKIP must come from the missing-draw guard, not from an
+            # unrelated rule (e.g. EVENT_LIVE on a stale fixture date).
+            assert f.is_live is False
+            assert "NO_BOOKMAKER_DATA" in f.reject_reasons
+            assert "EVENT_LIVE" not in f.reject_reasons
+
+    def test_past_commence_time_skips_via_event_live(self):
+        """Explicit live-path coverage: an event whose commence_time is in
+        the past is flagged is_live and SKIPped via the CRITICAL EVENT_LIVE
+        rule, even with complete 3-way FanDuel data."""
+        market = _market("Will Philadelphia Union beat New England Revolution?",
+                         prices=["0.40", "0.60"])
+        event = _event("New England Revolution", "Philadelphia Union",
+                       sport="soccer_usa_mls",
+                       home_odds=190, away_odds=130, draw_odds=240,
+                       commence_time="2000-01-01T20:00:00Z")
+        features = extract_features(market, event, cfg)
+        assert len(features) >= 1
+        for f in features:
+            assert f.is_live is True
+            assert f.has_bookmaker_data is True
+            status, _ = evaluate_rules(f, cfg)
+            assert status == "SKIP"
+            assert "EVENT_LIVE" in f.reject_reasons
+            assert "NO_BOOKMAKER_DATA" not in f.reject_reasons
 
     def test_non_soccer_2way_unaffected(self):
         """The guard must not over-fire on legitimate 2-way sports (tennis,

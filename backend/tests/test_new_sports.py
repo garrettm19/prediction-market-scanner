@@ -37,7 +37,7 @@ def _make_team_event(
     home_odds: int = -150,
     away_odds: int = 130,
     draw_odds: int | None = None,
-    commence_time: str = "2026-06-01T20:00:00Z",
+    commence_time: str = "2099-06-01T20:00:00Z",
 ) -> TennisOddsEvent:
     # Soccer h2h is 3-way; the feature extractor SKIPs candidates with
     # draw_odds=None on soccer events to avoid 2-way-devig phantom EV.
@@ -71,7 +71,7 @@ def _make_team_market(
     question: str,
     market_type: str = "h2h",
     prices: list[str] | None = None,
-    end_date: str = "2026-06-02T06:00:00Z",
+    end_date: str = "2099-06-02T06:00:00Z",
     platform: str = "polymarket",
 ) -> NormalizedMarket:
     return NormalizedMarket(
@@ -173,7 +173,7 @@ def _make_kalshi_market(
     question: str,
     side: str,
     prices: list[str] | None = None,
-    end_date: str = "2026-06-02T06:00:00Z",
+    end_date: str = "2099-06-02T06:00:00Z",
     event_slug: str = "test",
 ) -> NormalizedMarket:
     """Build a Kalshi-style NormalizedMarket with side hint (from yes_sub_title)."""
