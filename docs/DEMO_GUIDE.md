@@ -167,6 +167,11 @@ unchanged when demo mode is off.
 
 ## Known demo-mode limitations
 
+- The CLI (`python -m services.demo`) and `/api/opportunities/debug` run every
+  demo platform, so they report 3 BUY / 4 WATCH / 17 SKIP. The dashboard
+  follows the **Books** toggle (Kalshi only by default) and reports
+  2 BUY / 4 WATCH / 14 SKIP until Polymarket is enabled.
+
 - The **Data Sources** matrix shows Kalshi counts but no FanDuel freshness. The
   demo odds fetcher deliberately bypasses the shared odds cache so that demo
   data can never mix with cached live odds.
