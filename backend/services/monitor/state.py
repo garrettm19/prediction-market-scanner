@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -76,13 +77,34 @@ class AlertStateStore:
             logger.warning("AlertStateStore: failed to load %s: %s", self._path, exc)
 
     def save(self) -> None:
-        os.makedirs(os.path.dirname(self._path), exist_ok=True)
+        """Persist state atomically.
+
+        Writes to a temp file in the same directory, fsyncs it, then
+        ``os.replace``s it over the target, so a crash or full disk mid-write
+        can never leave a truncated alert_state.json (which would reset
+        cooldowns and the hourly cap on the next load).
+        """
+        directory = os.path.dirname(os.path.abspath(self._path))
+        os.makedirs(directory, exist_ok=True)
         payload = {
             "records": {k: asdict(v) for k, v in self._records.items()},
             "alerts_this_hour": self._alerts_this_hour,
         }
-        with open(self._path, "w") as f:
-            json.dump(payload, f, indent=2, default=str)
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=".alert_state.", suffix=".tmp", dir=directory,
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(payload, f, indent=2, default=str)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self._path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     # --- Record access ---
 

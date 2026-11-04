@@ -455,3 +455,74 @@ class TestAlertStatePathIsolation:
 
         s = MonitorScheduler(monitor_config=MonitorConfig(enabled=True, dry_run=True))
         assert os.path.realpath(s.state._path).startswith(os.path.realpath(str(tmp_path)))
+
+
+class TestAlertStateStorePersistence:
+    """moni4: atomic save + corrupt-file handling (all under tmp_path)."""
+
+    def test_save_load_round_trip(self, tmp_path):
+        path = tmp_path / "state.json"
+        store = AlertStateStore(path=str(path))
+        store.upsert("k1", platform="kalshi", last_alert_edge=0.07, alert_count=2)
+        store._alerts_this_hour = [time.time() - 10]
+        store.save()
+
+        reloaded = AlertStateStore(path=str(path))
+        rec = reloaded.get("k1")
+        assert rec is not None
+        assert rec.platform == "kalshi"
+        assert rec.last_alert_edge == 0.07
+        assert rec.alert_count == 2
+        assert reloaded.alerts_sent_this_hour() == 1
+
+    def test_save_leaves_no_temp_files(self, tmp_path):
+        path = tmp_path / "state.json"
+        store = AlertStateStore(path=str(path))
+        store.upsert("k1")
+        store.save()
+        store.save()
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["state.json"]
+
+    def test_save_creates_missing_directory(self, tmp_path):
+        path = tmp_path / "nested" / "dir" / "state.json"
+        store = AlertStateStore(path=str(path))
+        store.upsert("k1")
+        store.save()
+        assert path.exists()
+
+    def test_failed_save_keeps_previous_file_intact(self, tmp_path, monkeypatch):
+        import json as _json
+        import services.monitor.state as state_mod
+
+        path = tmp_path / "state.json"
+        store = AlertStateStore(path=str(path))
+        store.upsert("k1", alert_count=1)
+        store.save()
+        original = path.read_text()
+
+        def _boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(state_mod.json, "dump", _boom)
+        store.upsert("k2", alert_count=5)
+        with pytest.raises(OSError):
+            store.save()
+        monkeypatch.setattr(state_mod.json, "dump", _json.dump)
+
+        # Target untouched and still parseable; temp file cleaned up.
+        assert path.read_text() == original
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["state.json"]
+        reloaded = AlertStateStore(path=str(path))
+        assert reloaded.get("k1") is not None
+        assert reloaded.get("k2") is None
+
+    def test_corrupt_file_logs_warning_and_does_not_crash(self, tmp_path, caplog):
+        import logging
+
+        path = tmp_path / "state.json"
+        path.write_text('{"records": {"k1": {"key": "k1", "platfo')  # truncated
+        with caplog.at_level(logging.WARNING, logger="services.monitor.state"):
+            store = AlertStateStore(path=str(path))
+        assert store.all_records() == []
+        assert store.alerts_sent_this_hour() == 0
+        assert any("failed to load" in r.getMessage() for r in caplog.records)
