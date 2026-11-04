@@ -785,8 +785,11 @@ export function DashboardClient({ initialData }: Props) {
           <PaperMakerControls scanRefreshKey={scanRefreshKey} />
 
           {/* Main grid: table + sidebar */}
-          <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 320px" }}>
-            <div className="space-y-3">
+          {/* minmax(0, 1fr) lets the wide table scroll inside its own column
+              instead of pushing the detail panel off-screen; below lg the
+              detail panel stacks under the (card-layout) list. */}
+          <div className="grid gap-3 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="space-y-3 min-w-0">
               <OpportunitiesTable
                 opportunities={opportunities}
                 selectedId={displayed?.market_id}
