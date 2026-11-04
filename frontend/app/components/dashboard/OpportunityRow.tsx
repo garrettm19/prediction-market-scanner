@@ -215,7 +215,7 @@ export function OpportunityRow({
         {fmtOdds(opp.fd_odds)}
       </td>
 
-      {/* True Prob */}
+      {/* Model probability (devigged FanDuel) */}
       <td
         className="px-3 py-3 text-right font-mono"
         style={{ fontSize: "11px", color: "var(--fg-primary)" }}

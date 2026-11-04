@@ -189,7 +189,7 @@ function HeroSection({ opp, bankroll }: { opp: Opportunity; bankroll: number }) 
             className="font-mono"
             style={{ fontSize: "9px", color: "var(--fg-muted)" }}
           >
-            {(opp.p_true * 100).toFixed(1)}% true / {(opp.pm_price * 100).toFixed(1)}c entry
+            {(opp.p_true * 100).toFixed(1)}% model / {(opp.pm_price * 100).toFixed(1)}c entry
           </p>
         </div>
         <div className="text-right">
@@ -405,7 +405,7 @@ export function MarketDetailPanel({
           value={`${(opp.pm_price * 100).toFixed(1)}c`}
         />
         <Row
-          label="True Probability"
+          label="Model Probability (FD devig)"
           value={`${(opp.p_true * 100).toFixed(1)}%`}
           valueColor="var(--fg-primary)"
         />

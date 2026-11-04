@@ -41,13 +41,14 @@ export default function ModelPage() {
       <ol className="list-decimal pl-6 mb-4">
         <li className={li} style={s}>
           <strong style={accent}>Remove the sportsbook margin.</strong> FanDuel builds a
-          profit margin (vig) into their odds. The tool strips it out to get the &ldquo;true&rdquo;
-          probability. For soccer, the draw probability is included in this calculation.
+          profit margin (vig) into their odds. The tool strips it out to get a de-vigged
+          model probability &mdash; an estimate, not a known true probability. For soccer, the draw probability is included in this calculation.
         </li>
         <li className={li} style={s}>
-          <strong style={accent}>Compare to the prediction market price.</strong> If the true
+          <strong style={accent}>Compare to the prediction market price.</strong> If the model
           probability is higher than the prediction market price, there&apos;s positive expected
-          value. A 1&cent; cost buffer accounts for trading fees and spread.
+          value. A cost buffer (1&cent; on Kalshi, none on Polymarket) is added to the
+          market price before computing edge.
         </li>
         <li className={li} style={s}>
           <strong style={accent}>Run quality checks.</strong> Every opportunity passes through
@@ -119,7 +120,7 @@ export default function ModelPage() {
       <p className={p} style={s}>
         <strong style={accent}>CLV</strong> is the edge you actually had against the
         final closing line. It compares what you paid to what FanDuel implied at
-        kickoff &mdash; the sharpest, most accurate pre-game number.
+        kickoff &mdash; generally the best-informed pre-game number available to the tool.
       </p>
       <p className={p} style={s}>
         Example: You buy Dallas at 59&cent; on Kalshi. FanDuel has Dallas at 63%
@@ -130,7 +131,7 @@ export default function ModelPage() {
       <p className={p} style={s}>
         <strong>Why FanDuel is the benchmark:</strong> FanDuel&apos;s closing line
         reflects the final consensus of sharp bettors and professional bookmakers.
-        It is the most accurate pre-game probability available. By measuring your
+        It is a widely used proxy for a well-informed pre-game probability. By measuring your
         entry against this line, you&apos;re measuring whether you were ahead of
         the sharpest money in the market.
       </p>

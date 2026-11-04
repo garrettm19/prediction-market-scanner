@@ -29,7 +29,7 @@ export interface Opportunity {
   // Pricing — all for the SAME normalised side
   pm_price: number;
   fd_odds: number;                  // FanDuel American odds for this side
-  p_true: number;                   // devigged true probability
+  p_true: number;                   // devigged FanDuel model probability (an estimate)
   edge: number;                     // p_true - pm_price_effective
   recommended_kelly: number;
   kelly_full: number;
