@@ -99,15 +99,12 @@ def _make_opp(
 
 def _make_manager(config: MonitorConfig | None = None) -> tuple[AlertManager, AlertStateStore, DryRunNotifier]:
     cfg = config or _make_config()
-    state = AlertStateStore(path=":memory:")  # won't persist
-    state._path = None  # disable file I/O
+    # Default path is redirected to a per-test tmp_path by the autouse
+    # fixture in tests/conftest.py, so this never touches backend/data.
+    state = AlertStateStore()
     notifier = DryRunNotifier()
     manager = AlertManager(config=cfg, state=state, notifier=notifier)
     return manager, state, notifier
-
-
-# Patch AlertStateStore.save to no-op for in-memory testing
-AlertStateStore.save = lambda self: None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +310,44 @@ class TestRunCycle:
         assert result.suppressed_rate_limit == 3
         assert len(notifier.sent) == 2
 
+    def test_rate_limit_cap_lowered_below_already_sent_sends_nothing(self):
+        """Regression (moni0): cap lowered below alerts already sent this hour.
+
+        10 alerts already sent, cap now 5 -> hourly_remaining is -5.  A
+        negative slice previously kept len+(-5) items; the cap must instead
+        suppress every candidate.
+        """
+        manager, state, notifier = _make_manager(_make_config(max_alerts_per_hour=5))
+        now = time.time()
+        state._alerts_this_hour = [now - 60 - i for i in range(10)]
+
+        opps = [
+            _make_opp(event=f"Event {i}", side=f"Player {i}", edge=0.06 + i * 0.01)
+            for i in range(8)
+        ]
+        result = asyncio.run(manager.run_cycle(opps))
+
+        assert result.alerts_sent == 0
+        assert result.suppressed_rate_limit == 8
+        assert len(notifier.sent) == 0
+        assert state.alerts_sent_this_hour() == 10
+
+    def test_rate_limit_remaining_exactly_zero_sends_nothing(self):
+        """Boundary: alerts already sent == cap -> nothing sent, all suppressed."""
+        manager, state, notifier = _make_manager(_make_config(max_alerts_per_hour=5))
+        now = time.time()
+        state._alerts_this_hour = [now - 60 - i for i in range(5)]
+
+        opps = [
+            _make_opp(event=f"Event {i}", side=f"Player {i}", edge=0.06 + i * 0.01)
+            for i in range(3)
+        ]
+        result = asyncio.run(manager.run_cycle(opps))
+
+        assert result.alerts_sent == 0
+        assert result.suppressed_rate_limit == 3
+        assert len(notifier.sent) == 0
+
     def test_disabled_monitor_does_nothing(self):
         manager, _, notifier = _make_manager(_make_config(enabled=False, dry_run=False))
         opp = _make_opp(status="BUY", edge=0.08)
@@ -357,36 +392,31 @@ class TestRunCycle:
 
 class TestAlertStateStore:
     def test_upsert_creates_record(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         rec = store.upsert("test_key", platform="polymarket", event="Test")
         assert rec.key == "test_key"
         assert rec.platform == "polymarket"
 
     def test_upsert_updates_existing(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         store.upsert("test_key", platform="polymarket", current_edge=0.05)
         rec = store.upsert("test_key", current_edge=0.10)
         assert rec.current_edge == 0.10
         assert rec.platform == "polymarket"  # preserved from first upsert
 
     def test_alerts_sent_this_hour_prunes_old(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         # Add an alert timestamp from 2 hours ago
         store._alerts_this_hour = [time.time() - 7200]
         assert store.alerts_sent_this_hour() == 0
 
     def test_alerts_sent_this_hour_counts_recent(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         store._alerts_this_hour = [time.time() - 100, time.time() - 50]
         assert store.alerts_sent_this_hour() == 2
 
     def test_mark_all_inactive(self):
-        store = AlertStateStore(path=None)
-        store._path = None
+        store = AlertStateStore()
         store.upsert("k1", is_active=True)
         store.upsert("k2", is_active=True)
         store.mark_all_inactive()
@@ -403,3 +433,96 @@ class TestAlertStateStore:
         assert pruned == 1
         assert store.get("old") is None
         assert store.get("recent") is not None
+
+
+class TestAlertStatePathIsolation:
+    """Guard (testL0): tests must never touch backend/data/alert_state.json."""
+
+    def test_default_path_redirected_to_tmp(self, tmp_path):
+        import os
+        import services.monitor.state as alert_state
+
+        real = os.path.realpath(os.path.join(
+            os.path.dirname(alert_state.__file__), "..", "..", "data", "alert_state.json",
+        ))
+        store = AlertStateStore()
+        assert os.path.realpath(store._path) != real
+        assert os.path.realpath(store._path).startswith(os.path.realpath(str(tmp_path)))
+
+    def test_scheduler_state_uses_isolated_path(self, tmp_path):
+        import os
+        from services.monitor.scheduler import MonitorScheduler
+
+        s = MonitorScheduler(monitor_config=MonitorConfig(enabled=True, dry_run=True))
+        assert os.path.realpath(s.state._path).startswith(os.path.realpath(str(tmp_path)))
+
+
+class TestAlertStateStorePersistence:
+    """moni4: atomic save + corrupt-file handling (all under tmp_path)."""
+
+    def test_save_load_round_trip(self, tmp_path):
+        path = tmp_path / "state.json"
+        store = AlertStateStore(path=str(path))
+        store.upsert("k1", platform="kalshi", last_alert_edge=0.07, alert_count=2)
+        store._alerts_this_hour = [time.time() - 10]
+        store.save()
+
+        reloaded = AlertStateStore(path=str(path))
+        rec = reloaded.get("k1")
+        assert rec is not None
+        assert rec.platform == "kalshi"
+        assert rec.last_alert_edge == 0.07
+        assert rec.alert_count == 2
+        assert reloaded.alerts_sent_this_hour() == 1
+
+    def test_save_leaves_no_temp_files(self, tmp_path):
+        path = tmp_path / "state.json"
+        store = AlertStateStore(path=str(path))
+        store.upsert("k1")
+        store.save()
+        store.save()
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["state.json"]
+
+    def test_save_creates_missing_directory(self, tmp_path):
+        path = tmp_path / "nested" / "dir" / "state.json"
+        store = AlertStateStore(path=str(path))
+        store.upsert("k1")
+        store.save()
+        assert path.exists()
+
+    def test_failed_save_keeps_previous_file_intact(self, tmp_path, monkeypatch):
+        import json as _json
+        import services.monitor.state as state_mod
+
+        path = tmp_path / "state.json"
+        store = AlertStateStore(path=str(path))
+        store.upsert("k1", alert_count=1)
+        store.save()
+        original = path.read_text()
+
+        def _boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(state_mod.json, "dump", _boom)
+        store.upsert("k2", alert_count=5)
+        with pytest.raises(OSError):
+            store.save()
+        monkeypatch.setattr(state_mod.json, "dump", _json.dump)
+
+        # Target untouched and still parseable; temp file cleaned up.
+        assert path.read_text() == original
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["state.json"]
+        reloaded = AlertStateStore(path=str(path))
+        assert reloaded.get("k1") is not None
+        assert reloaded.get("k2") is None
+
+    def test_corrupt_file_logs_warning_and_does_not_crash(self, tmp_path, caplog):
+        import logging
+
+        path = tmp_path / "state.json"
+        path.write_text('{"records": {"k1": {"key": "k1", "platfo')  # truncated
+        with caplog.at_level(logging.WARNING, logger="services.monitor.state"):
+            store = AlertStateStore(path=str(path))
+        assert store.all_records() == []
+        assert store.alerts_sent_this_hour() == 0
+        assert any("failed to load" in r.getMessage() for r in caplog.records)

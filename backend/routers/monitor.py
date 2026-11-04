@@ -9,9 +9,11 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from services.demo import is_demo_mode
+from services.demo.guards import block_in_demo
 from services.monitor.config import MonitorConfig, AlertPreset, apply_preset
 from services.monitor.scheduler import MonitorScheduler
 
@@ -139,7 +141,10 @@ async def update_monitor_config(req: MonitorConfigRequest) -> MonitorConfigRespo
     return await get_monitor_config()
 
 
-@router.post("/monitor/start")
+@router.post(
+    "/monitor/start",
+    dependencies=[Depends(block_in_demo("the monitor polls live markets and sends alerts"))],
+)
 async def start_monitoring() -> dict:
     """Start the monitoring loop. Stops any existing loop first."""
     cfg = _get_config()
@@ -162,6 +167,10 @@ async def start_monitoring() -> dict:
 @router.post("/monitor/stop")
 async def stop_monitoring() -> dict:
     """Stop the monitoring loop."""
+    if is_demo_mode():
+        # Monitoring can never start in demo mode, so there is nothing to
+        # stop; skip the scheduler so no alert state is written to disk.
+        return {"status": "stopped"}
     cfg = _get_config()
     cfg.enabled = False
     scheduler = _get_scheduler()
@@ -189,6 +198,9 @@ async def get_monitor_status() -> MonitorStatusResponse:
 
 @router.get("/monitor/history")
 async def get_alert_history() -> list[dict]:
+    if is_demo_mode():
+        # Don't show the operator's real alert history next to demo data.
+        return []
     scheduler = _get_scheduler()
     records = scheduler.state.recent_alerts(limit=50)
     return [
@@ -208,7 +220,10 @@ async def get_alert_history() -> list[dict]:
     ]
 
 
-@router.post("/monitor/test")
+@router.post(
+    "/monitor/test",
+    dependencies=[Depends(block_in_demo("test notifications send a real Pushover message"))],
+)
 async def test_notification(req: TestNotificationRequest | None = None) -> dict:
     """Send a real test notification — always bypasses dry run."""
     from services.monitor.notifier import AlertPayload, PushoverNotifier
@@ -222,7 +237,7 @@ async def test_notification(req: TestNotificationRequest | None = None) -> dict:
         api_token=cfg.pushover_api_token,
     )
     payload = AlertPayload(
-        title="MasG EV Tool \u2014 Test",
+        title="Prediction Market Scanner \u2014 Test",
         body=req.message if req and req.message else "Push notifications are working.",
         priority=0,
     )

@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, asdict
+from typing import Awaitable, Callable
 
 from services.adapters import MarketAdapter, NormalizedMarket, PolymarketAdapter, KalshiAdapter
 from services.engine_config import EngineConfig
@@ -50,6 +51,11 @@ DEFAULT_CONFIG = EngineConfig()
 
 # Default adapter set
 DEFAULT_ADAPTERS: list[MarketAdapter] = [PolymarketAdapter(), KalshiAdapter()]
+
+# Signature of an injectable FanDuel odds source: same keyword arguments and
+# return shape as ``services.odds_provider.fetch_odds``.  Only the offline demo
+# mode (services/demo) passes one; ``None`` means the real fetch_odds call.
+OddsFetcher = Callable[..., Awaitable[tuple[list, dict]]]
 
 
 # ---------------------------------------------------------------------------
@@ -427,11 +433,18 @@ async def fetch_opportunities(
     cfg: EngineConfig = DEFAULT_CONFIG,
     adapters: list[MarketAdapter] | None = None,
     maker_cfg: MakerConfig | None = None,
+    *,
+    odds_fetcher: OddsFetcher | None = None,
 ) -> tuple[list[EvaluatedOpportunity], dict]:
     """
     Full two-pass pipeline:
       Pass A: fetch → match → extract features
       Pass B: evaluate rules → classify → Kelly → deduplicate → sort
+
+    ``odds_fetcher`` replaces the FanDuel source (default: the real
+    ``fetch_odds``).  It is called with the same keyword arguments and must
+    return the same ``(events, meta)`` shape.  Used by the offline demo mode
+    only; everything downstream of the fetch is the unchanged pipeline.
     """
     if adapters is None:
         # Filter DEFAULT_ADAPTERS by ScanConfig.platforms toggles.  Default
@@ -448,7 +461,8 @@ async def fetch_opportunities(
 
     # --- Fetch all sources in parallel ---
     fetch_tasks = [a.fetch_markets() for a in adapters]
-    fetch_tasks.append(fetch_odds(bookmaker=_BOOKMAKER, max_sports=25))
+    _odds = odds_fetcher if odds_fetcher is not None else fetch_odds
+    fetch_tasks.append(_odds(bookmaker=_BOOKMAKER, max_sports=25))
     if cfg.enable_props:
         fetch_tasks.append(fetch_props(bookmaker=_BOOKMAKER))
 
@@ -593,14 +607,20 @@ async def fetch_opportunities(
 async def diagnose_pipeline(
     cfg: EngineConfig = DEFAULT_CONFIG,
     adapters: list[MarketAdapter] | None = None,
+    *,
+    odds_fetcher: OddsFetcher | None = None,
 ) -> dict:
-    """Run the full pipeline and collect diagnostic info at every stage."""
+    """Run the full pipeline and collect diagnostic info at every stage.
+
+    ``odds_fetcher`` has the same meaning as in ``fetch_opportunities``.
+    """
     if adapters is None:
         adapters = DEFAULT_ADAPTERS
 
+    _odds = odds_fetcher if odds_fetcher is not None else fetch_odds
     adapter_results = await asyncio.gather(
         *[a.fetch_markets() for a in adapters],
-        fetch_odds(bookmaker=_BOOKMAKER, max_sports=25),
+        _odds(bookmaker=_BOOKMAKER, max_sports=25),
     )
 
     odds_events, meta = adapter_results[-1]

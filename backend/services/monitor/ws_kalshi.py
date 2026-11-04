@@ -36,8 +36,15 @@ logger = logging.getLogger(__name__)
 
 _WS_URL = "wss://api.elections.kalshi.com/trade-api/ws/v2"
 _RECONNECT_DELAY = 5
+_MAX_RECONNECT_DELAY = 60
 _PING_INTERVAL = 30
 _MEANINGFUL_PRICE_CHANGE = 0.01
+
+
+def _backoff_delay(attempt: int) -> int:
+    """Exponential reconnect backoff: 5, 10, 20, 40, then capped at 60s."""
+    attempt = max(1, attempt)
+    return min(_RECONNECT_DELAY * (2 ** min(attempt - 1, 10)), _MAX_RECONNECT_DELAY)
 
 
 class KalshiWsConsumer:
@@ -106,7 +113,10 @@ class KalshiWsConsumer:
                     close_timeout=5,
                 ) as ws:
                     self._connected = True
-                    self._reconnect_count = 0
+                    # _reconnect_count is reset only once the connection has
+                    # proven healthy (first message received), so a server
+                    # that accepts then immediately closes still backs off.
+                    healthy = False
                     logger.info("KalshiWs: connected")
 
                     # Subscribe to orderbook updates for watched tickers
@@ -124,11 +134,29 @@ class KalshiWsConsumer:
 
                     async for raw_msg in ws:
                         self._last_message_ts = time.time()
+                        if not healthy:
+                            healthy = True
+                            self._reconnect_count = 0
                         try:
                             msg = json.loads(raw_msg)
                             await self._handle_message(msg, on_price_change)
                         except json.JSONDecodeError:
                             continue
+
+                # Clean server close (1000/1001): ``async for`` ends without an
+                # exception.  Treat it as a disconnect and back off too,
+                # otherwise the loop reconnects in a tight loop.
+                self._connected = False
+                self._authenticated = False
+                if not self._running:
+                    break
+                self._reconnect_count += 1
+                delay = _backoff_delay(self._reconnect_count)
+                logger.warning(
+                    "KalshiWs: connection closed by server, reconnecting in %ds (attempt %d)",
+                    delay, self._reconnect_count,
+                )
+                await asyncio.sleep(delay)
 
             except Exception as exc:
                 self._connected = False
@@ -146,7 +174,7 @@ class KalshiWsConsumer:
                     return
 
                 # Exponential backoff capped at 60s
-                delay = min(_RECONNECT_DELAY * min(self._reconnect_count, 12), 60)
+                delay = _backoff_delay(self._reconnect_count)
                 logger.warning(
                     "KalshiWs: disconnected (%s), reconnecting in %ds (attempt %d)",
                     exc, delay, self._reconnect_count,

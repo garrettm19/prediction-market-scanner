@@ -101,6 +101,10 @@ class MonitorScheduler:
         self._last_cycle_ts: float = 0.0
         self._last_cycle_result: CycleResult | None = None
         self._debounce_lock = asyncio.Lock()
+        # Serializes start()/stop() so overlapping /monitor/start or
+        # /monitor/stop calls cannot create duplicate or orphaned
+        # poller / WS tasks.
+        self._lifecycle_lock = asyncio.Lock()
         self._last_ws_eval_ts: float = 0.0
         self._ws_eval_cooldown: float = 10.0  # min seconds between WS-triggered evals
 
@@ -196,6 +200,10 @@ class MonitorScheduler:
 
     async def start(self) -> None:
         """Start all monitoring sources."""
+        async with self._lifecycle_lock:
+            await self._start_locked()
+
+    async def _start_locked(self) -> None:
         if self._running:
             logger.warning("MonitorScheduler: already running")
             return
@@ -210,6 +218,13 @@ class MonitorScheduler:
 
         # Run initial evaluation immediately
         await self._run_pipeline_and_alert(trigger="startup")
+
+        # stop() may have been called while the startup pipeline was
+        # awaited.  Do not spawn background sources in that case — they
+        # would be orphaned (never cancelled) and keep spending quota.
+        if not self._running:
+            logger.info("MonitorScheduler: stopped during startup; not starting sources")
+            return
 
         # Start Odds API poller
         self._tasks.append(
@@ -238,18 +253,23 @@ class MonitorScheduler:
 
     async def stop(self) -> None:
         """Stop all monitoring sources."""
+        # Flag first (before waiting on the lifecycle lock) so an in-flight
+        # start() bails out after its startup pipeline instead of spawning
+        # background tasks.
         self._running = False
         self.odds_poller.stop()
         self.pm_ws.stop()
         self.kalshi_ws.stop()
 
-        for task in self._tasks:
-            task.cancel()
-        if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
-        self._tasks.clear()
+        async with self._lifecycle_lock:
+            self._running = False
+            for task in self._tasks:
+                task.cancel()
+            if self._tasks:
+                await asyncio.gather(*self._tasks, return_exceptions=True)
+            self._tasks.clear()
 
-        self.state.save()
+            self.state.save()
         logger.info("MonitorScheduler: stopped")
 
     def update_config(self, config: MonitorConfig) -> None:

@@ -633,7 +633,12 @@ def _parse_prices(market: NormalizedMarket) -> tuple[float, float] | None:
         return None
     if not (0.01 <= pm_yes <= 0.99):
         return None
-    if not (0.01 <= pm_no <= 0.99):
+    # Synthesize NO only when it is missing / near zero.  A real NO price
+    # above 0.99 (e.g. Kalshi no_ask=1.00 when nobody bids YES) means the
+    # complement is unbuyable at any sane price — pass it through so the
+    # price_in_range / prices_consistent rules reject that side instead of
+    # pricing it at an optimistic, non-executable 1 - yes.
+    if pm_no < 0.01:
         pm_no = round(1.0 - pm_yes, 4)
     return pm_yes, pm_no
 

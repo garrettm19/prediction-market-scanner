@@ -1,5 +1,4 @@
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+import { BACKEND_URL, apiFetch } from "./api";
 
 export interface MonitorConfig {
   enabled: boolean;
@@ -27,7 +26,7 @@ export interface MonitorStatus {
 }
 
 export async function fetchMonitorConfig(): Promise<MonitorConfig> {
-  const res = await fetch(`${BACKEND_URL}/api/monitor/config`, { cache: "no-store" });
+  const res = await apiFetch(`${BACKEND_URL}/api/monitor/config`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
@@ -35,17 +34,30 @@ export async function fetchMonitorConfig(): Promise<MonitorConfig> {
 export async function updateMonitorConfig(
   updates: Record<string, unknown>,
 ): Promise<MonitorConfig> {
-  const res = await fetch(`${BACKEND_URL}/api/monitor/config`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/monitor/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
-  if (!res.ok) throw new Error(`Backend error: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Backend error: ${res.status}`);
+  }
   return res.json();
 }
 
+// POST /api/monitor/start does not respond until the scheduler's initial
+// "startup" pipeline run (a full snapshot refresh, possibly queued behind an
+// in-flight manual scan) has finished, so the default 15s timeout would abort
+// a start that the backend still completes. Allow it much longer.
+export const MONITOR_START_TIMEOUT_MS = 300_000;
+
 export async function startMonitoring(): Promise<{ status: string }> {
-  const res = await fetch(`${BACKEND_URL}/api/monitor/start`, { method: "POST" });
+  const res = await apiFetch(
+    `${BACKEND_URL}/api/monitor/start`,
+    { method: "POST" },
+    MONITOR_START_TIMEOUT_MS,
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Backend error: ${res.status}`);
@@ -54,19 +66,25 @@ export async function startMonitoring(): Promise<{ status: string }> {
 }
 
 export async function stopMonitoring(): Promise<{ status: string }> {
-  const res = await fetch(`${BACKEND_URL}/api/monitor/stop`, { method: "POST" });
+  // Stop waits for an in-flight start (serialized on the backend), which can
+  // include the startup pipeline run, so it needs the same long timeout.
+  const res = await apiFetch(
+    `${BACKEND_URL}/api/monitor/stop`,
+    { method: "POST" },
+    MONITOR_START_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
 
 export async function fetchMonitorStatus(): Promise<MonitorStatus> {
-  const res = await fetch(`${BACKEND_URL}/api/monitor/status`, { cache: "no-store" });
+  const res = await apiFetch(`${BACKEND_URL}/api/monitor/status`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
 
 export async function testNotification(): Promise<{ sent: boolean }> {
-  const res = await fetch(`${BACKEND_URL}/api/monitor/test`, { method: "POST" });
+  const res = await apiFetch(`${BACKEND_URL}/api/monitor/test`, { method: "POST" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Backend error: ${res.status}`);

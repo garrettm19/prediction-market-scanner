@@ -1,11 +1,12 @@
 {
-  "name": "masg-ev-tool",
+  "name": "prediction-market-scanner",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "^15.0.0",

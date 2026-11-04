@@ -10,8 +10,53 @@ import {
 } from "./types";
 import type { SportRegistryEntry } from "./sport-labels";
 
-const BACKEND_URL =
+export const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+
+// Default per-request timeout. One hung request (backend accepted the TCP
+// connection but never answers) must not stall the dashboard poll loop
+// forever: the request is aborted and the caller's catch path runs.
+export const API_TIMEOUT_MS = 15_000;
+
+/**
+ * fetch() with an AbortController-based timeout. If the caller passes its
+ * own ``signal``, aborting either one aborts the request. On timeout the
+ * returned promise rejects with an Error whose message says so.
+ *
+ * The timeout covers the time until response headers arrive; it is cleared
+ * before the caller reads the body (res.json()), so a body that stalls after
+ * the headers is not covered. Endpoints that legitimately run long before
+ * responding must pass a larger ``timeoutMs``.
+ */
+export async function apiFetch(
+  input: string,
+  init: RequestInit = {},
+  timeoutMs: number = API_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const outer = init.signal;
+  const onOuterAbort = () => controller.abort();
+  if (outer) {
+    if (outer.aborted) controller.abort();
+    else outer.addEventListener("abort", onOuterAbort, { once: true });
+  }
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (e) {
+    if (timedOut) {
+      throw new Error(`Request timed out after ${timeoutMs / 1000}s`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    if (outer) outer.removeEventListener("abort", onOuterAbort);
+  }
+}
 
 export interface PriceHistoryResponse {
   platform: string;
@@ -27,7 +72,7 @@ export async function fetchPriceHistory(
   const url = new URL(`${BACKEND_URL}/api/opportunities/history`);
   url.searchParams.set("platform", platform);
   url.searchParams.set("market_id", marketId);
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const res = await apiFetch(url.toString(), { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
@@ -39,26 +84,26 @@ export async function fetchOpportunities(params: {
   const url = new URL(`${BACKEND_URL}/api/opportunities`);
   if (params.platform != null) url.searchParams.set("platform", params.platform);
   if (params.include_watch != null) url.searchParams.set("include_watch", String(params.include_watch));
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const res = await apiFetch(url.toString(), { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
 
 export async function fetchSnapshotStatus(): Promise<SnapshotStatus> {
-  const res = await fetch(`${BACKEND_URL}/api/opportunities/status`, { cache: "no-store" });
+  const res = await apiFetch(`${BACKEND_URL}/api/opportunities/status`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
 
 export async function fetchSnapshot(): Promise<OpportunitiesResponse | null> {
-  const res = await fetch(`${BACKEND_URL}/api/opportunities/snapshot`, { cache: "no-store" });
+  const res = await apiFetch(`${BACKEND_URL}/api/opportunities/snapshot`, { cache: "no-store" });
   if (res.status === 204) return null;
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
 
 export async function refreshOpportunities(): Promise<SnapshotStatus> {
-  const res = await fetch(`${BACKEND_URL}/api/opportunities/refresh`, { method: "POST" });
+  const res = await apiFetch(`${BACKEND_URL}/api/opportunities/refresh`, { method: "POST" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Backend error: ${res.status}`);
@@ -67,25 +112,25 @@ export async function refreshOpportunities(): Promise<SnapshotStatus> {
 }
 
 export async function fetchSportsRegistry(): Promise<Record<string, SportRegistryEntry>> {
-  const res = await fetch(`${BACKEND_URL}/api/sports`, { cache: "no-store" });
+  const res = await apiFetch(`${BACKEND_URL}/api/sports`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
 
 export async function fetchDataStatus(): Promise<SportDataStatus[]> {
-  const res = await fetch(`${BACKEND_URL}/api/data-status`, { cache: "no-store" });
+  const res = await apiFetch(`${BACKEND_URL}/api/data-status`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
 
 export async function fetchScanConfig(): Promise<ScanConfigResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/scan/config`, { cache: "no-store" });
+  const res = await apiFetch(`${BACKEND_URL}/api/scan/config`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
 
 export async function updateScanConfig(updates: Record<string, unknown>): Promise<ScanConfigResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/scan/config`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/scan/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
@@ -129,7 +174,7 @@ export async function fetchMakerProposals(params: {
   if (params.eligible != null) url.searchParams.set("eligible", String(params.eligible));
   if (params.latest_run != null) url.searchParams.set("latest_run", String(params.latest_run));
   if (params.limit != null) url.searchParams.set("limit", String(params.limit));
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const res = await apiFetch(url.toString(), { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
@@ -137,7 +182,7 @@ export async function fetchMakerProposals(params: {
 // Runtime maker config — read.  Always returns the current safety-clamped
 // values regardless of who set them.
 export async function fetchMakerConfig(): Promise<MakerConfig> {
-  const res = await fetch(`${BACKEND_URL}/api/maker/config`, { cache: "no-store" });
+  const res = await apiFetch(`${BACKEND_URL}/api/maker/config`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
@@ -147,7 +192,7 @@ export async function fetchMakerConfig(): Promise<MakerConfig> {
 // backend additionally enforces paper-mode safety invariants on every
 // write so this endpoint cannot enable live trading or Polymarket.
 export async function updateMakerConfig(update: MakerConfigUpdate): Promise<MakerConfig> {
-  const res = await fetch(`${BACKEND_URL}/api/maker/config`, {
+  const res = await apiFetch(`${BACKEND_URL}/api/maker/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(update),
@@ -166,7 +211,7 @@ export async function fetchMakerSummary(params: {
   const url = new URL(`${BACKEND_URL}/api/maker/summary`);
   if (params.days != null) url.searchParams.set("days", String(params.days));
   if (params.latest_run != null) url.searchParams.set("latest_run", String(params.latest_run));
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const res = await apiFetch(url.toString(), { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }
@@ -180,7 +225,7 @@ export async function fetchHistoricalOdds(
   url.searchParams.set("sport_key", sportKey);
   url.searchParams.set("event_id", eventId);
   url.searchParams.set("date", date);
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const res = await apiFetch(url.toString(), { cache: "no-store" });
   if (!res.ok) return null;
   const body = await res.json();
   return body.snapshot ?? null;

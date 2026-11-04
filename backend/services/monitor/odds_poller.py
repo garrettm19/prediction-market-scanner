@@ -16,6 +16,7 @@ import time
 from typing import Callable, Awaitable
 
 from services.odds_provider import TennisOddsEvent, fetch_odds
+from services.redaction import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class OddsApiPoller:
             )
             return events, meta
         except Exception as exc:
-            logger.error("OddsApiPoller: poll failed: %s", exc)
+            logger.error("OddsApiPoller: poll failed: %s", redact_secrets(exc))
             return self._latest_events, self._latest_meta
 
     async def run_loop(

@@ -30,7 +30,7 @@ const COLUMNS: Column[] = [
   { label: "Price",         align: "right"  },
   { label: "Age",           align: "center" },
   { label: "FD Odds",       align: "right"  },
-  { label: "True Prob",     align: "right"  },
+  { label: "Model Prob",    align: "right"  },
   { label: "Edge",          align: "right"  },
   { label: "Kelly",         align: "right"  },
   { label: "Bet Size",      align: "right"  },

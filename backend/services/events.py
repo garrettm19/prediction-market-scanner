@@ -3,7 +3,12 @@ Gamma API events flow — active, open, sports events only.
 Primary data source replacing the broad /markets fetch.
 """
 import httpx
+import logging
 import os
+
+from services.redaction import redact_secrets
+
+logger = logging.getLogger(__name__)
 
 GAMMA_BASE = os.getenv("GAMMA_API_BASE", "https://gamma-api.polymarket.com")
 
@@ -80,17 +85,33 @@ async def fetch_markets_by_tags(tags: list[str], limit: int = 500) -> list[dict]
     """
     Fetch active markets from Polymarket for multiple sport tags.
     Deduplicates by market id across tags.
+
+    A failure fetching one tag (HTTP error, timeout, bad payload) is
+    isolated: it is logged and that tag contributes no markets, while the
+    other tags' results are still returned.  This fails closed (fewer
+    markets, never fabricated ones) and keeps one flaky Polymarket tag from
+    aborting the whole scan, including the Kalshi and Odds fetches.
+    No retries are added.
     """
     import asyncio
 
     tag_results = await asyncio.gather(
-        *[_fetch_paginated(tag, limit=limit) for tag in tags]
+        *[_fetch_paginated(tag, limit=limit) for tag in tags],
+        return_exceptions=True,
     )
 
     # Deduplicate events by id
     seen_event_ids: set[str] = set()
     unique_events: list[dict] = []
-    for events in tag_results:
+    for tag, events in zip(tags, tag_results):
+        if isinstance(events, BaseException):
+            if not isinstance(events, Exception):
+                raise events  # e.g. CancelledError — do not swallow
+            logger.warning(
+                "Polymarket tag %r fetch failed, skipping tag: %s: %s",
+                tag, type(events).__name__, redact_secrets(events)[:200],
+            )
+            continue
         for ev in events:
             eid = ev.get("id") or ev.get("slug") or id(ev)
             if eid not in seen_event_ids:

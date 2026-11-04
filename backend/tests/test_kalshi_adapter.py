@@ -1523,3 +1523,180 @@ class TestEndDatePrefersTickerDate:
         assert nm is not None
         # No YYMONDD in event_ticker → falls through to close_time
         assert nm.end_date == "2026-06-01T18:00:00Z"
+
+
+# ---------------------------------------------------------------------------
+# Adversarial: the draw/Tie leg must never be emitted as an h2h team market
+# ---------------------------------------------------------------------------
+
+def _future_epl_event_ticker(days_ahead: int = 6) -> tuple[str, str]:
+    """Return (event_ticker, commence_time) for a match `days_ahead` days out."""
+    from datetime import datetime, timedelta, timezone
+    d = datetime.now(timezone.utc) + timedelta(days=days_ahead)
+    et = f"KXEPLGAME-{d:%y}{d:%b}{d:%d}ARSCHE".upper()
+    return et, d.strftime("%Y-%m-%dT20:00:00Z")
+
+
+def _raw_3way_leg(
+    event_ticker: str,
+    suffix: str,
+    yes_sub_title: str,
+    yes_ask: float,
+    yes_bid: float,
+    no_ask: float | None = None,
+    no_bid: float | None = None,
+) -> tuple[dict, str, str]:
+    d = {
+        "ticker": f"{event_ticker}-{suffix}",
+        "event_ticker": event_ticker,
+        "title": "Arsenal vs Chelsea Winner?",
+        "yes_sub_title": yes_sub_title,
+        "yes_ask_dollars": str(yes_ask),
+        "yes_bid_dollars": str(yes_bid),
+        "volume_fp": "100",
+        "liquidity_dollars": "1000",
+        "close_time": "2026-12-24T00:00:00Z",
+    }
+    if no_ask is not None:
+        d["no_ask_dollars"] = str(no_ask)
+    if no_bid is not None:
+        d["no_bid_dollars"] = str(no_bid)
+    return d, "KXEPLGAME", "epl"
+
+
+def _assert_no_draw_emitted(results: list[NormalizedMarket]) -> None:
+    for nm in results:
+        assert (nm.side or "").strip().lower() not in {"tie", "draw"}, nm
+        assert not nm.market_id.upper().endswith("-TIE"), nm
+
+
+class TestDrawNeverEmittedAsTeamMarket:
+    """A 3-way event that cannot form a valid team pair must emit nothing."""
+
+    ET = "KXEPLGAME-26NOV10ARSCHE"
+
+    def _tie(self, ya=0.37, sub="Tie"):
+        return _raw_3way_leg(self.ET, "TIE", sub, ya, ya - 0.02, 1 - ya + 0.02, 1 - ya)
+
+    def _ars(self, ya=0.47):
+        return _raw_3way_leg(self.ET, "ARS", "Arsenal", ya, ya - 0.02, 1 - ya + 0.02, 1 - ya)
+
+    def _che_no_ask(self):
+        # No YES asks (yes_ask 0) → dropped during parsing.
+        return _raw_3way_leg(self.ET, "CHE", "Chelsea", 0, 0.25, 0.75, 1.0)
+
+    @pytest.mark.parametrize("order", [
+        ("tie", "ars", "che"), ("tie", "che", "ars"),
+        ("ars", "tie", "che"), ("ars", "che", "tie"),
+        ("che", "tie", "ars"), ("che", "ars", "tie"),
+    ])
+    def test_tie_team_and_unpriced_team_emits_nothing(self, order):
+        legs = {"tie": self._tie(), "ars": self._ars(), "che": self._che_no_ask()}
+        results = _build_event_markets(self.ET, [legs[k] for k in order])
+        _assert_no_draw_emitted(results)
+        # A lone team market in a 3-way event cannot price the opponent
+        # (1 - team includes the draw), so nothing may be emitted at all.
+        assert results == []
+
+    def test_tie_only_group_emits_nothing(self):
+        assert _build_event_markets(self.ET, [self._tie()]) == []
+
+    def test_draw_labelled_only_group_emits_nothing(self):
+        assert _build_event_markets(self.ET, [self._tie(sub="Draw")]) == []
+
+    @pytest.mark.parametrize("order", [("ars", "tie"), ("tie", "ars")])
+    def test_team_plus_tie_pair_emits_nothing(self, order):
+        legs = {"tie": self._tie(), "ars": self._ars()}
+        assert _build_event_markets(self.ET, [legs[k] for k in order]) == []
+
+    def test_unpriced_tie_with_one_team_emits_nothing(self):
+        """Draw leg with no ask is dropped during parsing — the raw group is
+        still 3-way, so the remaining lone team must not be emitted."""
+        tie = _raw_3way_leg(self.ET, "TIE", "Tie", 0, 0.30, 0.72, 0.70)
+        assert _build_event_markets(self.ET, [self._ars(), tie]) == []
+
+    def test_tie_detected_by_ticker_suffix_only(self):
+        """yes_sub_title missing — the -TIE ticker suffix alone marks the draw."""
+        tie = _raw_3way_leg(self.ET, "TIE", "", 0.37, 0.35, 0.65, 0.63)
+        results = _build_event_markets(self.ET, [tie, self._ars(), self._che_no_ask()])
+        assert results == []
+
+    def test_single_market_fallback_rejects_draw(self):
+        from services.adapters.kalshi import _single_market_fallback
+        for sub in ("Tie", "tie", " Draw ", ""):
+            m, series, slug = _raw_3way_leg(self.ET, "TIE", sub, 0.37, 0.35, 0.65, 0.63)
+            assert _single_market_fallback(m, series, slug) is None
+        # Draw by yes_sub_title even with a non-TIE ticker suffix
+        m, series, slug = _raw_3way_leg(self.ET, "DRW", "Draw", 0.37, 0.35, 0.65, 0.63)
+        assert _single_market_fallback(m, series, slug) is None
+
+    def test_normal_3way_with_both_teams_priced_unchanged(self):
+        che = _raw_3way_leg(self.ET, "CHE", "Chelsea", 0.31, 0.29, 0.71, 0.69)
+        results = _build_event_markets(self.ET, [self._tie(), self._ars(), che])
+        assert len(results) == 2
+        _assert_no_draw_emitted(results)
+        by_side = {r.side: r for r in results}
+        assert set(by_side) == {"Arsenal", "Chelsea"}
+        assert by_side["Arsenal"].price == pytest.approx(0.47)
+        assert by_side["Chelsea"].price == pytest.approx(0.31)
+        assert by_side["Arsenal"].market_id == f"{self.ET}-ARS"
+        assert by_side["Chelsea"].market_id == f"{self.ET}-CHE"
+
+    def test_normal_2way_unchanged(self):
+        ma = _make_market_entry("KXATPMATCH-A", "Will Alcaraz win?", 0.60, 0.42)
+        mb = _make_market_entry("KXATPMATCH-B", "Will Sinner win?", 0.40, 0.62)
+        results = _build_event_markets("EVT-123", [ma, mb])
+        assert len(results) == 1
+        prices = [float(p) for p in results[0].outcome_prices]
+        assert prices == pytest.approx([0.60, 0.40])
+
+    def test_2way_with_one_unpriced_leg_still_falls_back(self):
+        """No draw in the group → existing single-market fallback preserved."""
+        ma = _make_market_entry("KXATPMATCH-A", "Will Alcaraz win?", 0.60, 0.42)
+        mb = _make_market_entry("KXATPMATCH-B", "Will Sinner win?", 0.0, 0.62)
+        results = _build_event_markets("EVT-123", [ma, mb])
+        assert len(results) == 1
+        assert results[0].market_id == "KXATPMATCH-A"
+
+
+class TestDrawFallbackEndToEnd:
+    """Previously reproduced false positive: the TIE contract (yes_ask 0.37)
+    was emitted with side 'Tie', fell back to positional alignment in Pass A,
+    was labelled 'Arsenal', and classified BUY at edge ~0.065."""
+
+    @pytest.mark.parametrize("order", [("tie", "ars", "che"), ("che", "ars", "tie")])
+    def test_tie_contract_never_reaches_buy(self, order):
+        from services.engine_config import EngineConfig
+        from services.feature_extractor import extract_features
+        from services.normalizer import normalize_name
+        from services.odds_provider import TennisOddsEvent, BookmakerLine
+        from services.rule_engine import evaluate_rules
+
+        et, commence = _future_epl_event_ticker()
+        legs = {
+            "tie": _raw_3way_leg(et, "TIE", "Tie", 0.37, 0.35, 0.65, 0.63),
+            "ars": _raw_3way_leg(et, "ARS", "Arsenal", 0.47, 0.45, 0.55, 0.53),
+            "che": _raw_3way_leg(et, "CHE", "Chelsea", 0, 0.25, 0.75, 1.0),
+        }
+        event = TennisOddsEvent(
+            event_id="e", sport_key="soccer_epl", tournament="EPL",
+            home_player="Arsenal", away_player="Chelsea",
+            home_player_norm=normalize_name("Arsenal"),
+            away_player_norm=normalize_name("Chelsea"),
+            commence_time=commence,
+            bookmakers=[BookmakerLine(
+                bookmaker_key="fanduel", bookmaker_title="FanDuel",
+                home_odds=115, away_odds=230, draw_odds=260,
+                last_update=commence,
+            )],
+        )
+        cfg = EngineConfig()
+        nms = _build_event_markets(et, [legs[k] for k in order])
+        _assert_no_draw_emitted(nms)
+        statuses = []
+        for nm in nms:
+            for f in extract_features(nm, event, cfg):
+                status, _ = evaluate_rules(f, cfg)
+                statuses.append(status)
+        assert "BUY" not in statuses
+        assert "WATCH" not in statuses

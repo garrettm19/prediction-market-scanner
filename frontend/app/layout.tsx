@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
-import { NavWalletButton } from "./components/dashboard/NavWalletButton";
 import "./globals.css";
 
 // Inter for UI text. Google Sans / Google Sans Flex are not yet exposed via
@@ -20,7 +19,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MasG EV Tool",
+  title: "Prediction Market Scanner",
   description: "Cross-platform EV scanner for prediction market opportunities",
 };
 
@@ -41,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               className="font-mono font-bold text-[13px] tracking-[0.2em] uppercase"
               style={{ color: "#e2e8f0" }}
             >
-              MasG EV
+              Market Scanner
             </span>
             <span
               className="font-mono text-[8px] tracking-wider px-1.5 py-0.5 rounded uppercase ml-1"
@@ -67,20 +66,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Model
             </Link>
           </nav>
-
-          <div className="ml-auto flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span
-                className="w-1.5 h-1.5 rounded-full animate-pulse"
-                style={{ background: "#4ade80", boxShadow: "0 0 6px #4ade80" }}
-              />
-              <span className="font-mono text-[10px] tracking-wider uppercase" style={{ color: "#374151" }}>
-                Scanning
-              </span>
-            </div>
-            <div className="h-4 w-px" style={{ background: "rgba(75,85,99,0.3)" }} />
-            <NavWalletButton />
-          </div>
         </header>
 
         {children}

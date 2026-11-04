@@ -1,8 +1,8 @@
-# MasG EV Tool — Claude Project Instructions
+# Prediction Market Scanner — Claude Project Instructions
 
 ## Purpose
 
-MasG EV Tool is a local, single-user, read-only EV scanner for prediction market mispricing.
+Prediction Market Scanner is a local, single-user, read-only EV scanner for prediction market mispricing.
 
 It compares Polymarket and Kalshi prices against FanDuel-derived true probabilities from The Odds API to identify positive expected value opportunities.
 
@@ -305,8 +305,8 @@ Do not break:
 
 Frontend API calls should stay centralized in:
 
-- `frontend/app/lib/api.ts`
-- `frontend/app/lib/monitor-api.ts`
+- `frontend/lib/api.ts`
+- `frontend/lib/monitor-api.ts`
 
 Do not add inline fetches inside components unless the project already uses that pattern and there is a clear reason.
 

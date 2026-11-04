@@ -102,6 +102,89 @@ const iStyle = { background: "rgba(13,20,22,0.8)", borderColor: "var(--border-de
 const iClass = "rounded border font-mono text-[11px] focus:outline-none focus-visible:[box-shadow:var(--ring-focus)] focus:[border-color:var(--accent-border)]";
 
 // ---------------------------------------------------------------------------
+// NumericSetting — local draft, committed on blur / Enter only.
+// Typing must not POST partial values (e.g. "3" on the way to "30").
+// Values outside [min, max], non-numeric, or non-integer (when ``integer``)
+// are rejected: nothing is sent and the draft reverts to the server value.
+// ---------------------------------------------------------------------------
+
+interface NumericSettingProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  integer: boolean;
+  className: string;
+  /** Persist the value. Resolves true on success, false on failure. */
+  onCommit: (n: number) => Promise<boolean>;
+  /** Called with a human-readable message when the draft is invalid. */
+  onInvalid: (msg: string) => void;
+}
+
+function NumericSetting({
+  label, value, min, max, step, integer, className, onCommit, onInvalid,
+}: NumericSettingProps) {
+  const [draft, setDraft] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+  // True while a save is in flight: keep showing the submitted draft instead
+  // of snapping back to the (old) server value until the save settles.
+  const [saving, setSaving] = useState(false);
+
+  // Follow the server value whenever the user is not editing or saving.
+  useEffect(() => {
+    if (!focused && !saving) setDraft(String(value));
+  }, [value, focused, saving]);
+
+  const commit = async () => {
+    setFocused(false);
+    const trimmed = draft.trim();
+    const n = Number(trimmed);
+    if (
+      trimmed === "" ||
+      !Number.isFinite(n) ||
+      (integer && !Number.isInteger(n)) ||
+      n < min ||
+      n > max
+    ) {
+      setDraft(String(value));
+      onInvalid(`${label} must be ${integer ? "a whole number " : ""}between ${min} and ${max}`);
+      return;
+    }
+    if (n === value) return;
+    setSaving(true);
+    try {
+      const ok = await onCommit(n);
+      if (!ok) setDraft(String(value));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      step={step}
+      min={min}
+      max={max}
+      aria-label={label}
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { void commit(); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      className={className}
+      style={iStyle}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -135,10 +218,19 @@ export function NotificationSettings({ config, status, onReload }: Props) {
 
   const liveActive = running && !config.dry_run;
 
-  const save = async (updates: Record<string, unknown>) => {
+  // Never rejects: failures are surfaced via ``error`` (role="alert") so
+  // e.g. a failed "Switch to Dry-run" is visible instead of silent.
+  // Resolves true on success, false on failure.
+  const save = async (updates: Record<string, unknown>): Promise<boolean> => {
     setSaving(true); setError(null);
-    try { await updateMonitorConfig(updates); await onReload(); }
-    finally { setSaving(false); }
+    try {
+      await updateMonitorConfig(updates);
+      await onReload();
+      return true;
+    } catch (e: unknown) {
+      setError(`Save failed: ${e instanceof Error ? e.message : "unknown error"}`);
+      return false;
+    } finally { setSaving(false); }
   };
 
   const handleStartStop = async () => {
@@ -278,6 +370,27 @@ export function NotificationSettings({ config, status, onReload }: Props) {
           </div>
         </div>
 
+        {/* Error row — visible even when collapsed, so a failed save (e.g.
+            "Switch to Dry-run" from the LIVE banner) is never silent. */}
+        {error && (
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-3 px-4 pb-2 font-mono"
+            style={{ fontSize: "10px", color: "var(--danger-strong)" }}
+          >
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              aria-label="Dismiss error"
+              className="focus:outline-none focus-visible:[box-shadow:var(--ring-focus)]"
+              style={{ color: "var(--fg-faint)" }}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* ── EXPANDED ── */}
         {expanded && (
           <div
@@ -303,11 +416,6 @@ export function NotificationSettings({ config, status, onReload }: Props) {
               >
                 {starting ? "..." : running ? "Stop Monitoring" : "Start Monitoring"}
               </button>
-              {error && (
-                <span className="font-mono" style={{ fontSize: "10px", color: "var(--danger-strong)" }}>
-                  {error}
-                </span>
-              )}
               {!config.has_pushover_credentials && !running && (
                 <span className="font-mono" style={{ fontSize: "10px", color: "var(--warn-strong)" }}>
                   Set PUSHOVER keys in .env first
@@ -480,15 +588,16 @@ export function NotificationSettings({ config, status, onReload }: Props) {
                 <div className="space-y-1">
                   <label className="font-mono" style={{ fontSize: "10px", color: "var(--fg-faint)" }}>Min EV</label>
                   <div className="relative">
-                    <input
-                      type="number"
-                      step="1"
-                      min="1"
-                      max="50"
+                    <NumericSetting
+                      label="Min EV"
+                      step={1}
+                      min={1}
+                      max={50}
+                      integer={false}
                       value={Math.round(config.min_ev * 100)}
-                      onChange={(e) => save({ min_ev: parseFloat(e.target.value) / 100 })}
+                      onCommit={(n) => save({ min_ev: n / 100 })}
+                      onInvalid={setError}
                       className={`w-full pl-2 pr-5 py-1 text-right ${iClass}`}
-                      style={iStyle}
                     />
                     <span
                       className="absolute right-1.5 top-1/2 -translate-y-1/2 font-mono"
@@ -501,15 +610,16 @@ export function NotificationSettings({ config, status, onReload }: Props) {
                 <div className="space-y-1">
                   <label className="font-mono" style={{ fontSize: "10px", color: "var(--fg-faint)" }}>Refresh every</label>
                   <div className="relative">
-                    <input
-                      type="number"
-                      step="5"
-                      min="5"
-                      max="60"
+                    <NumericSetting
+                      label="Refresh every"
+                      step={5}
+                      min={5}
+                      max={60}
+                      integer={true}
                       value={config.refresh_interval_minutes}
-                      onChange={(e) => save({ refresh_interval_minutes: parseInt(e.target.value) || 15 })}
+                      onCommit={(n) => save({ refresh_interval_minutes: n })}
+                      onInvalid={setError}
                       className={`w-full pl-2 pr-7 py-1 text-right ${iClass}`}
-                      style={iStyle}
                     />
                     <span
                       className="absolute right-1.5 top-1/2 -translate-y-1/2 font-mono"
@@ -522,15 +632,16 @@ export function NotificationSettings({ config, status, onReload }: Props) {
                 <div className="space-y-1">
                   <label className="font-mono" style={{ fontSize: "10px", color: "var(--fg-faint)" }}>Cooldown</label>
                   <div className="relative">
-                    <input
-                      type="number"
-                      step="5"
-                      min="5"
-                      max="120"
+                    <NumericSetting
+                      label="Cooldown"
+                      step={5}
+                      min={5}
+                      max={120}
+                      integer={true}
                       value={config.cooldown_minutes}
-                      onChange={(e) => save({ cooldown_minutes: parseInt(e.target.value) || 30 })}
+                      onCommit={(n) => save({ cooldown_minutes: n })}
+                      onInvalid={setError}
                       className={`w-full pl-2 pr-7 py-1 text-right ${iClass}`}
-                      style={iStyle}
                     />
                     <span
                       className="absolute right-1.5 top-1/2 -translate-y-1/2 font-mono"
@@ -542,15 +653,16 @@ export function NotificationSettings({ config, status, onReload }: Props) {
                 </div>
                 <div className="space-y-1">
                   <label className="font-mono" style={{ fontSize: "10px", color: "var(--fg-faint)" }}>Max alerts/hr</label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="1"
-                    max="30"
+                  <NumericSetting
+                    label="Max alerts/hr"
+                    step={1}
+                    min={1}
+                    max={30}
+                    integer={true}
                     value={config.max_alerts_per_hour}
-                    onChange={(e) => save({ max_alerts_per_hour: parseInt(e.target.value) || 10 })}
+                    onCommit={(n) => save({ max_alerts_per_hour: n })}
+                    onInvalid={setError}
                     className={`w-full px-2 py-1 text-right ${iClass}`}
-                    style={iStyle}
                   />
                 </div>
               </div>

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from services.normalizer import normalize_name
+from services.redaction import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +339,7 @@ async def discover_event_markets(
         logger.error("Market discovery error %s/%s: HTTP %s", sport_key, event_id, exc.response.status_code)
         return []
     except Exception as exc:
-        logger.error("Market discovery error %s/%s: %s", sport_key, event_id, exc)
+        logger.error("Market discovery error %s/%s: %s", sport_key, event_id, redact_secrets(exc))
         return []
 
     # Extract market keys from the target bookmaker's response.
@@ -394,7 +395,7 @@ async def discover_sport_markets(
     try:
         raw_events = await fetch_sport_events(sport_key, api_key, client)
     except Exception as exc:
-        logger.error("[%s] discovery: event fetch failed: %s", sport_key, exc)
+        logger.error("[%s] discovery: event fetch failed: %s", sport_key, redact_secrets(exc))
         return None
 
     if not raw_events:
@@ -458,7 +459,7 @@ async def _sample_alternate_lines(
         resp.raise_for_status()
         body = resp.json()
     except Exception as exc:
-        logger.error("[%s] alt-sample error event %s: %s", sport_key, event_id, exc)
+        logger.error("[%s] alt-sample error event %s: %s", sport_key, event_id, redact_secrets(exc))
         return
 
     for bm in body.get("bookmakers") or []:
@@ -632,7 +633,7 @@ async def fetch_props(
                     except httpx.HTTPStatusError as exc:
                         logger.error("Props fetch error %s/%s: %s", sport_key, eid, exc.response.status_code)
                     except Exception as exc:
-                        logger.error("Props fetch error %s/%s: %s", sport_key, eid, exc)
+                        logger.error("Props fetch error %s/%s: %s", sport_key, eid, redact_secrets(exc))
 
                 prop_cache.store_cached(sport_key, sport_events)
                 fetched_sports.append(sport_key)
@@ -642,7 +643,7 @@ async def fetch_props(
                     sum(len(pe.props) for pe in sport_events),
                 )
             except Exception as exc:
-                logger.error("Props event discovery failed for %s: %s", sport_key, exc)
+                logger.error("Props event discovery failed for %s: %s", sport_key, redact_secrets(exc))
 
     # Merge all from cache (includes freshly stored)
     all_prop_events = prop_cache.get_all_cached_props()
@@ -758,7 +759,7 @@ async def fetch_tennis_odds(
             except httpx.HTTPStatusError as exc:
                 logger.error(f"Odds API error for {key}: {exc.response.status_code}")
             except Exception as exc:  # noqa: BLE001
-                logger.error(f"Unexpected error fetching odds for {key}: {exc}")
+                logger.error(f"Unexpected error fetching odds for {key}: {redact_secrets(exc)}")
 
     meta = {
         "sports_fetched": sport_keys,
@@ -831,7 +832,7 @@ async def _resolve_all_sport_keys(api_key: str) -> dict[str, str]:
                 _discovery_cache_ts = now
                 logger.info("Sport-key discovery: fetched %d keys, cached", len(discovered))
             except Exception as exc:
-                logger.error("Sport-key discovery failed: %s", exc)
+                logger.error("Sport-key discovery failed: %s", redact_secrets(exc))
                 if _discovery_cache is not None:
                     # Serve stale cache on error
                     discovered = _discovery_cache
@@ -840,6 +841,29 @@ async def _resolve_all_sport_keys(api_key: str) -> dict[str, str]:
 
     logger.info("Resolved %d sport keys: %s", len(key_to_sport), list(key_to_sport.keys()))
     return key_to_sport
+
+
+def _record_sport_fetch_failure(odds_cache, key: str, ttl: float, error: str) -> dict:
+    """
+    Fail-closed handling for a sport key whose refetch failed.
+
+    If the key's cached entry is past TTL it is evicted, so expired FanDuel
+    odds are never merged back in as pricing truth.  A still-fresh entry is
+    left untouched.  Returns a meta record for ``sports_failed``; ``error``
+    must be a short, secret-free string (e.g. "HTTP 429" or an exception
+    type name).
+    """
+    fetched_at = odds_cache.get_fetched_at(key)
+    stale_age: float | None = None
+    if fetched_at:
+        stale_age = round(time.time() - fetched_at, 1)
+        if odds_cache.get_cached(key, ttl) is None:
+            odds_cache.invalidate(key)
+            logger.warning(
+                "[%s] refetch failed (%s); evicted expired odds (age %.0fs > ttl %ss)",
+                key, error, stale_age, ttl,
+            )
+    return {"sport_key": key, "error": error, "stale_age_seconds": stale_age}
 
 
 async def fetch_odds(
@@ -876,6 +900,7 @@ async def fetch_odds(
     fetched_keys: list[str] = []
     cached_keys: list[str] = []
     skipped_keys: list[str] = []
+    failed: list[dict] = []
     last_quota: dict = {}
 
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -947,10 +972,23 @@ async def fetch_odds(
 
             except httpx.HTTPStatusError as exc:
                 logger.error("Odds API error for %s: %s", key, exc.response.status_code)
+                if key not in fetched_keys:
+                    failed.append(_record_sport_fetch_failure(
+                        odds_cache, key, ttl, f"HTTP {exc.response.status_code}",
+                    ))
             except Exception as exc:
-                logger.error("Unexpected error fetching odds for %s: %s", key, exc)
+                logger.error(
+                    "Unexpected error fetching odds for %s: %s",
+                    key, redact_secrets(exc),
+                )
+                if key not in fetched_keys:
+                    failed.append(_record_sport_fetch_failure(
+                        odds_cache, key, ttl, type(exc).__name__,
+                    ))
 
-    # Merge all events from cache (includes freshly stored ones)
+    # Merge all events from cache (includes freshly stored ones).
+    # Keys whose refetch failed past TTL were evicted above, so expired
+    # FanDuel odds never reach Pass A as pricing truth.
     all_events = odds_cache.get_all_cached_events()
 
     logger.info(
@@ -965,6 +1003,7 @@ async def fetch_odds(
         "quota_remaining": last_quota.get("remaining"),
         "quota_used": last_quota.get("used"),
         "total_events": len(all_events),
+        "sports_failed": failed,
     }
     return all_events, meta
 
@@ -1022,7 +1061,7 @@ async def fetch_historical_odds(
             resp.raise_for_status()
             body = resp.json()
         except Exception as exc:
-            logger.error("Historical odds fetch failed (%s/%s): %s", sport_key, event_id, exc)
+            logger.error("Historical odds fetch failed (%s/%s): %s", sport_key, event_id, redact_secrets(exc))
             return None
 
     snapshot_time = body.get("timestamp", date_iso)

@@ -29,7 +29,7 @@ export interface Opportunity {
   // Pricing — all for the SAME normalised side
   pm_price: number;
   fd_odds: number;                  // FanDuel American odds for this side
-  p_true: number;                   // devigged true probability
+  p_true: number;                   // devigged FanDuel model probability (an estimate)
   edge: number;                     // p_true - pm_price_effective
   recommended_kelly: number;
   kelly_full: number;
@@ -111,6 +111,7 @@ export interface OpportunitiesResponse {
   platforms_fetched: string[];
   updated_at: number | null;
   is_refreshing: boolean;
+  data_source?: string | null;      // "demo" | "live" (additive)
 }
 
 export interface BookStatus {
@@ -296,6 +297,13 @@ export interface MakerSummary {
   primary_rejection_reasons: MakerSummaryRejectionReason[];
 }
 
+/** One sport whose FanDuel odds refetch failed (backend meta["sports_failed"]). */
+export interface OddsFailure {
+  sport_key: string;
+  error: string;
+  stale_age_seconds: number | null;
+}
+
 export interface SnapshotStatus {
   has_snapshot: boolean;
   updated_at: number | null;
@@ -308,4 +316,12 @@ export interface SnapshotStatus {
   opportunity_count: number;
   status_counts: Record<string, number>;
   platforms_fetched: string[];
+  // Partial-failure signals: sport keys whose FanDuel odds refetch failed in
+  // the latest snapshot (expired odds for those sports were evicted).
+  degraded?: boolean | null;
+  odds_failures?: OddsFailure[] | null;
+  // True when the backend runs in offline demo mode (synthetic data).
+  demo_mode?: boolean | null;
+  // meta.data_source of the stored snapshot: "demo" | "live".
+  data_source?: string | null;
 }

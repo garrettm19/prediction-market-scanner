@@ -287,7 +287,7 @@ export function OpportunityCard({
           valueColor="var(--fg-muted)"
         />
         <Metric
-          label="True Prob"
+          label="Model Prob"
           value={fmtPct(opp.p_true)}
           valueColor="var(--fg-primary)"
         />

@@ -37,7 +37,7 @@ def _make_event(
     away: str = "Jannik Sinner",
     event_id: str = "ev1",
     sport_key: str = "tennis_atp_french_open",
-    commence_time: str = "2026-06-01T12:00:00Z",
+    commence_time: str = "2099-06-01T12:00:00Z",
     home_odds: int = -180,
     away_odds: int = 150,
 ) -> TennisOddsEvent:
@@ -67,7 +67,7 @@ def _make_market(
     market_id: str = "m1",
     market_type: str = "h2h",
     prices: list[str] | None = None,
-    end_date: str | None = "2026-06-01T18:00:00Z",
+    end_date: str | None = "2099-06-01T18:00:00Z",
 ) -> NormalizedMarket:
     return NormalizedMarket(
         platform="polymarket",
@@ -147,24 +147,24 @@ class TestNameScore:
 
 class TestDateScore:
     def test_same_time(self):
-        score, delta = _date_score("2026-06-01T12:00:00Z", "2026-06-01T12:00:00Z")
+        score, delta = _date_score("2099-06-01T12:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 1.0
         assert delta == pytest.approx(0.0, abs=0.01)
 
     def test_within_6h(self):
-        score, _ = _date_score("2026-06-01T17:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-06-01T17:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 1.0
 
     def test_within_24h(self):
-        score, _ = _date_score("2026-06-02T10:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-06-02T10:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 0.95
 
     def test_within_7days(self):
-        score, _ = _date_score("2026-06-06T12:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-06-06T12:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 0.85
 
     def test_within_21days(self):
-        score, _ = _date_score("2026-06-20T12:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-06-20T12:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 0.70
 
     def test_21day_confidence_below_buy_threshold(self):
@@ -178,13 +178,13 @@ class TestDateScore:
         from services.matcher import _date_score as matcher_date_score
 
         cases = [
-            ("2026-06-01T12:00:00Z", "2026-06-01T12:00:00Z"),   # 0h
-            ("2026-06-01T17:00:00Z", "2026-06-01T12:00:00Z"),   # 5h
-            ("2026-06-02T10:00:00Z", "2026-06-01T12:00:00Z"),   # 22h
-            ("2026-06-06T12:00:00Z", "2026-06-01T12:00:00Z"),   # 5d
-            ("2026-06-20T12:00:00Z", "2026-06-01T12:00:00Z"),   # 19d
-            ("2026-08-01T12:00:00Z", "2026-06-01T12:00:00Z"),   # >21d
-            (None, "2026-06-01T12:00:00Z"),                      # missing
+            ("2099-06-01T12:00:00Z", "2099-06-01T12:00:00Z"),   # 0h
+            ("2099-06-01T17:00:00Z", "2099-06-01T12:00:00Z"),   # 5h
+            ("2099-06-02T10:00:00Z", "2099-06-01T12:00:00Z"),   # 22h
+            ("2099-06-06T12:00:00Z", "2099-06-01T12:00:00Z"),   # 5d
+            ("2099-06-20T12:00:00Z", "2099-06-01T12:00:00Z"),   # 19d
+            ("2099-08-01T12:00:00Z", "2099-06-01T12:00:00Z"),   # >21d
+            (None, "2099-06-01T12:00:00Z"),                      # missing
         ]
         for end_date, commence_time in cases:
             fe_score, _ = _date_score(end_date, commence_time)
@@ -195,16 +195,16 @@ class TestDateScore:
             )
 
     def test_beyond_21days(self):
-        score, _ = _date_score("2026-08-01T12:00:00Z", "2026-06-01T12:00:00Z")
+        score, _ = _date_score("2099-08-01T12:00:00Z", "2099-06-01T12:00:00Z")
         assert score == 0.0
 
     def test_missing_end_date(self):
-        score, delta = _date_score(None, "2026-06-01T12:00:00Z")
+        score, delta = _date_score(None, "2099-06-01T12:00:00Z")
         assert score == 0.5
         assert delta is None
 
     def test_invalid_date(self):
-        score, delta = _date_score("not-a-date", "2026-06-01T12:00:00Z")
+        score, delta = _date_score("not-a-date", "2099-06-01T12:00:00Z")
         assert score == 0.5
 
 
@@ -487,7 +487,7 @@ class TestExtractFeatures:
             away_player="Jannik Sinner",
             home_player_norm="carlos alcaraz",
             away_player_norm="jannik sinner",
-            commence_time="2026-06-01T12:00:00Z",
+            commence_time="2099-06-01T12:00:00Z",
             bookmakers=[],
         )
         features = extract_features(market, event, EngineConfig())
@@ -545,14 +545,14 @@ class TestExtractFeatures:
             away_player="Jannik Sinner",
             home_player_norm="carlos alcaraz",
             away_player_norm="jannik sinner",
-            commence_time="2026-06-01T12:00:00Z",
+            commence_time="2099-06-01T12:00:00Z",
             bookmakers=[
                 BookmakerLine(
                     bookmaker_key="draftkings",
                     bookmaker_title="DraftKings",
                     home_odds=-180,
                     away_odds=150,
-                    last_update="2026-06-01T12:00:00Z",
+                    last_update="2099-06-01T12:00:00Z",
                 )
             ],
         )
@@ -579,14 +579,14 @@ class TestExtractFeatures:
             away_player="Jannik Sinner",
             home_player_norm=normalize_player_name("Félix Auger-Aliassime"),
             away_player_norm=normalize_player_name("Jannik Sinner"),
-            commence_time="2026-06-01T12:00:00Z",
+            commence_time="2099-06-01T12:00:00Z",
             bookmakers=[
                 BookmakerLine(
                     bookmaker_key="fanduel",
                     bookmaker_title="FanDuel",
                     home_odds=-150,
                     away_odds=130,
-                    last_update="2026-06-01T12:00:00Z",
+                    last_update="2099-06-01T12:00:00Z",
                 )
             ],
         )
@@ -626,14 +626,14 @@ class TestExtractFeatures:
             away_player="Jannik Sinner",
             home_player_norm=normalize_player_name("Jannik O'Sullivan"),
             away_player_norm=normalize_player_name("Jannik Sinner"),
-            commence_time="2026-06-01T12:00:00Z",
+            commence_time="2099-06-01T12:00:00Z",
             bookmakers=[
                 BookmakerLine(
                     bookmaker_key="fanduel",
                     bookmaker_title="FanDuel",
                     home_odds=110,
                     away_odds=-130,
-                    last_update="2026-06-01T12:00:00Z",
+                    last_update="2099-06-01T12:00:00Z",
                 )
             ],
         )
@@ -671,7 +671,7 @@ class TestPlatformCostBuffer:
             url=None,
             timestamp=None,
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.55", "0.45"],
             event_slug="KXTEST-26JUN01ALCSNN",
         )
@@ -703,7 +703,7 @@ class TestPlatformCostBuffer:
             url=None,
             timestamp=None,
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.55", "0.45"],
             event_slug="KXTEST-26JUN01ALCSNN",
         )
@@ -748,9 +748,9 @@ class TestBestBidAskPassThrough:
             price=0.60,
             liquidity=500.0,
             url="https://kalshi.com/markets/test",
-            timestamp="2026-06-01T18:00:00Z",
+            timestamp="2099-06-01T18:00:00Z",
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.60", "0.40"],
             event_slug="test",
             best_bid=best_bid,
@@ -814,7 +814,7 @@ class TestBestBidAskPassThrough:
             url=None,
             timestamp=None,
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.55", "0.45"],
             event_slug="test",
         )
@@ -863,7 +863,7 @@ class TestBestBidAskPassThrough:
             url=None,
             timestamp=None,
             question="Will Alcaraz beat Sinner?",
-            end_date="2026-06-01T18:00:00Z",
+            end_date="2099-06-01T18:00:00Z",
             outcome_prices=["0.60", "0.40"],
             event_slug="test",
             bid_ask_spread=0.02,
@@ -885,3 +885,97 @@ class TestBestBidAskPassThrough:
         assert yes_feat.best_ask == pytest.approx(0.60)
         assert yes_feat.best_bid_market_id == "K1"
         assert yes_feat.best_bid_contract_side == "yes"
+
+
+# ---------------------------------------------------------------------------
+# Adversarial: an unbuyable NO side (no_ask >= 0.99) must not be re-priced
+# at 1 - yes and surfaced as BUY.
+# ---------------------------------------------------------------------------
+
+class TestUnbuyableNoSideNotSynthesized:
+    """Previously reproduced false positive: single-market Kalshi fallback with
+    Sinner yes_ask 0.40, no YES bids → no_ask 1.00.  _parse_prices rewrote NO
+    to 0.60 and the Alcaraz (complement) side was classified BUY at edge
+    ~0.056 although the only executable NO price was 1.00."""
+
+    @staticmethod
+    def _setup(no_ask: str | None):
+        from datetime import datetime, timedelta, timezone
+        from services.adapters.kalshi import _single_market_fallback
+
+        d = datetime.now(timezone.utc) + timedelta(days=6)
+        et = f"KXATPMATCH-{d:%y}{d:%b}{d:%d}SINALC".upper()
+        commence = d.strftime("%Y-%m-%dT20:00:00Z")
+        raw = {
+            "ticker": et + "-SIN",
+            "event_ticker": et,
+            "title": "Will Jannik Sinner win the Sinner vs Alcaraz : Final match?",
+            "yes_sub_title": "Jannik Sinner",
+            "yes_ask_dollars": "0.40",
+            "yes_bid_dollars": "0",
+            "no_bid_dollars": "0.60",
+            "liquidity_dollars": "500",
+            "close_time": "2026-12-24T00:00:00Z",
+        }
+        if no_ask is not None:
+            raw["no_ask_dollars"] = no_ask
+        market = _single_market_fallback(raw, "KXATPMATCH", "atp")
+        assert market is not None
+        event = _make_event(
+            home="Jannik Sinner", away="Carlos Alcaraz",
+            sport_key="tennis_atp_finals", commence_time=commence,
+            home_odds=190, away_odds=-220,
+        )
+        return market, event
+
+    def test_parse_prices_passes_through_real_no_at_one(self):
+        from services.feature_extractor import _parse_prices
+        m = _make_market(prices=["0.40", "1.0"])
+        assert _parse_prices(m) == (0.40, 1.0)
+        m = _make_market(prices=["0.40", "0.995"])
+        assert _parse_prices(m) == (0.40, 0.995)
+
+    def test_parse_prices_still_synthesizes_missing_no(self):
+        from services.feature_extractor import _parse_prices
+        for no in ("0", "0.0", "-1", "0.005"):
+            m = _make_market(prices=["0.40", no])
+            assert _parse_prices(m) == (0.40, 0.60)
+
+    def test_parse_prices_unparsable_still_rejected(self):
+        from services.feature_extractor import _parse_prices
+        assert _parse_prices(_make_market(prices=["0.40", "n/a"])) is None
+
+    def test_complement_side_not_buy_or_watch_when_no_ask_is_one(self):
+        from services.rule_engine import evaluate_rules
+        cfg = EngineConfig()
+        market, event = self._setup(no_ask="1.0000")
+        assert market.outcome_prices == ["0.4", "1.0"]
+        features = extract_features(market, event, cfg)
+        alc = next(f for f in features if f.side == "Carlos Alcaraz")
+        assert alc.pm_price == pytest.approx(1.0)
+        assert alc.price_in_range is False
+        assert alc.prices_internally_consistent is False
+        status, _ = evaluate_rules(alc, cfg)
+        assert status == "SKIP"
+
+    def test_yes_side_pricing_unaffected(self):
+        cfg = EngineConfig()
+        market, event = self._setup(no_ask="1.0000")
+        features = extract_features(market, event, cfg)
+        sin = next(f for f in features if f.side == "Jannik Sinner")
+        assert sin.outcome_aligned is True
+        assert sin.pm_price == pytest.approx(0.40)
+        assert sin.price_in_range is True
+        # Edge/p_true computed exactly as before (from the YES ask).
+        assert sin.edge == pytest.approx(round(sin.p_true - sin.pm_price_effective, 4))
+
+    def test_missing_no_ask_still_synthesized_downstream(self):
+        """no_ask absent → adapter synthesizes 1 - yes; behaviour unchanged."""
+        cfg = EngineConfig()
+        market, event = self._setup(no_ask=None)
+        assert market.outcome_prices == ["0.4", "0.6"]
+        features = extract_features(market, event, cfg)
+        alc = next(f for f in features if f.side == "Carlos Alcaraz")
+        assert alc.pm_price == pytest.approx(0.60)
+        assert alc.price_in_range is True
+        assert alc.prices_internally_consistent is True
