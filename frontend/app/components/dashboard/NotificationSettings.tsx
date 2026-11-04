@@ -127,11 +127,14 @@ function NumericSetting({
 }: NumericSettingProps) {
   const [draft, setDraft] = useState(String(value));
   const [focused, setFocused] = useState(false);
+  // True while a save is in flight: keep showing the submitted draft instead
+  // of snapping back to the (old) server value until the save settles.
+  const [saving, setSaving] = useState(false);
 
-  // Follow the server value whenever the user is not editing.
+  // Follow the server value whenever the user is not editing or saving.
   useEffect(() => {
-    if (!focused) setDraft(String(value));
-  }, [value, focused]);
+    if (!focused && !saving) setDraft(String(value));
+  }, [value, focused, saving]);
 
   const commit = async () => {
     setFocused(false);
@@ -149,8 +152,13 @@ function NumericSetting({
       return;
     }
     if (n === value) return;
-    const ok = await onCommit(n);
-    if (!ok) setDraft(String(value));
+    setSaving(true);
+    try {
+      const ok = await onCommit(n);
+      if (!ok) setDraft(String(value));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

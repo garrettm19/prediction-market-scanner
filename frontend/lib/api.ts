@@ -22,6 +22,11 @@ export const API_TIMEOUT_MS = 15_000;
  * fetch() with an AbortController-based timeout. If the caller passes its
  * own ``signal``, aborting either one aborts the request. On timeout the
  * returned promise rejects with an Error whose message says so.
+ *
+ * The timeout covers the time until response headers arrive; it is cleared
+ * before the caller reads the body (res.json()), so a body that stalls after
+ * the headers is not covered. Endpoints that legitimately run long before
+ * responding must pass a larger ``timeoutMs``.
  */
 export async function apiFetch(
   input: string,

@@ -46,8 +46,18 @@ export async function updateMonitorConfig(
   return res.json();
 }
 
+// POST /api/monitor/start does not respond until the scheduler's initial
+// "startup" pipeline run (a full snapshot refresh, possibly queued behind an
+// in-flight manual scan) has finished, so the default 15s timeout would abort
+// a start that the backend still completes. Allow it much longer.
+export const MONITOR_START_TIMEOUT_MS = 300_000;
+
 export async function startMonitoring(): Promise<{ status: string }> {
-  const res = await apiFetch(`${BACKEND_URL}/api/monitor/start`, { method: "POST" });
+  const res = await apiFetch(
+    `${BACKEND_URL}/api/monitor/start`,
+    { method: "POST" },
+    MONITOR_START_TIMEOUT_MS,
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Backend error: ${res.status}`);
