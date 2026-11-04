@@ -26,7 +26,6 @@ app.add_middleware(
 )
 
 
-
 def _json_safe(value: Any) -> Any:
     """Replace non-finite floats (inf/-inf/nan) with their string form so
     a validation-error payload that echoes them back can be serialized."""
