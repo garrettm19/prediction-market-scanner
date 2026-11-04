@@ -113,7 +113,10 @@ The pipeline runs in eight steps:
 4. **Series dedup** keeps only the closest-date game when several games
    match one market, for example a three-game baseball series.
 5. **Ambiguity enrichment** sets the competing-match and shared-last-name
-   indicators that some rules read.
+   indicators that some rules read. Because it runs after series dedup, those
+   particular rules currently have no rival event to compare against. This is
+   a known gap with a proposed fix ([M-1](docs/KNOWN_ISSUES.md)); per-event
+   checks such as last-name collision still apply.
 6. **Pass B** (`rule_engine.py`) evaluates a single policy table of 23 rules.
    Any CRITICAL failure gives SKIP. Any DOWNGRADE failure gives WATCH. Only
    candidates that pass every rule become BUY. Fractional Kelly sizing is
@@ -254,7 +257,7 @@ covers:
   cost buffers and Kelly.
 - **Adversarial matching.** Shared last names, multi-game series dedup,
   team-name outcomes, Kalshi paired and three-way markets, the soccer draw
-  guard, and totals line and side mismatches.
+  guard, totals line mismatches, and prop line, type and side handling.
 - **Adapters.** Normalization, pagination, draw-leg handling and unbuyable
   sides.
 - **Concurrency.** Snapshot lifecycle, background-refresh single-flight, cold

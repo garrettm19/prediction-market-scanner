@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { StatusPill, type StatusPillTone } from "../ui/StatusPill";
+import type { OddsFailure } from "@/lib/types";
 
 interface StatusStripProps {
   // Refresh state
@@ -28,7 +29,7 @@ interface StatusStripProps {
   backendUnreachableSince?: number | null;
   /** Optional partial-failure flags from /status (only shown when present). */
   degraded?: boolean | null;
-  oddsFailures?: string[] | number | null;
+  oddsFailures?: OddsFailure[] | null;
 }
 
 // Snapshot staleness window. The longest monitor refresh interval selectable
@@ -182,14 +183,14 @@ export function StatusStrip(props: StatusStripProps) {
   // --- Odds health pill (only when the backend reports it) ---
   let oddsPill: PillSpec | null = null;
   const failures = props.oddsFailures;
-  const failureCount = Array.isArray(failures) ? failures.length : typeof failures === "number" ? failures : 0;
+  const failureCount = Array.isArray(failures) ? failures.length : 0;
   if (props.degraded || failureCount > 0) {
     oddsPill = {
       label: "Odds",
       value: "Degraded",
       tone: "warn",
       title: Array.isArray(failures) && failures.length > 0
-        ? `Odds fetch failures: ${failures.join(", ")}`
+        ? `Odds fetch failures: ${failures.map((f) => `${f.sport_key} (${f.error})`).join(", ")}`
         : "Backend reports a partial odds failure",
       detail: failureCount > 0 ? `${failureCount} failed` : null,
     };

@@ -66,7 +66,13 @@ export async function startMonitoring(): Promise<{ status: string }> {
 }
 
 export async function stopMonitoring(): Promise<{ status: string }> {
-  const res = await apiFetch(`${BACKEND_URL}/api/monitor/stop`, { method: "POST" });
+  // Stop waits for an in-flight start (serialized on the backend), which can
+  // include the startup pipeline run, so it needs the same long timeout.
+  const res = await apiFetch(
+    `${BACKEND_URL}/api/monitor/stop`,
+    { method: "POST" },
+    MONITOR_START_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
   return res.json();
 }

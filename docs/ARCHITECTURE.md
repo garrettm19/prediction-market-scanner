@@ -437,7 +437,7 @@ Fixture event dates are set in 2099 so that tests do not fall into the `EVENT_LI
 
 Open issues, their severity and planned follow-ups are tracked in `docs/KNOWN_ISSUES.md`. The ones that bear most on the architecture:
 
-- **Ambiguity rules rarely fire.** Series dedup runs before ambiguity enrichment and keeps one event per market. As a result `competing_matches`, `confidence_gap` and `shared_last_name` rarely have a rival event to compare against in the production order.
+- **Cross-event ambiguity rules do not fire in production.** Series dedup runs before ambiguity enrichment and keeps exactly one event per market, so `competing_matches` is always 1 and the `EXCESS_COMPETING_MATCHES`, `AMBIGUOUS_MATCH_GAP` and `SHARED_LAST_NAME` rules cannot trigger in `fetch_opportunities` (they do appear in `diagnose_pipeline`, which skips dedup). Per-event checks such as `LAST_NAME_COLLISION` are unaffected. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) M-1 for the proposed fix.
 - **Totals.** These come only from Polymarket (off by default), which always treats YES as Over. Handicap extraction cannot be reached, because no adapter emits handicap markets.
 - **Quota cap not enforced.** `ScanConfig.global_max_odds_api_per_day` is never applied, and there is no handling of HTTP 429 or `Retry-After`.
 - **Disabled sports stay cached.** Odds-cache entries for a sport disabled during a session are not evicted by `fetch_odds`. Like every cached entry, they are still merged into the event list.

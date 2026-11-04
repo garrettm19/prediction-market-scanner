@@ -6,8 +6,13 @@ The backend has no authentication: it is a single-user tool bound to
 *reading* cross-origin responses — it does not stop a page on another site
 from *sending* a "simple" request (a bodyless POST, or a form/text POST)
 to ``http://localhost:8000``.  Without this guard any website the user
-visits could stop the monitor, kick off quota-consuming refreshes, or call
-``POST /api/monitor/test`` (which sends a real Pushover notification).
+visits could stop the monitor, trigger ``POST /api/opportunities/refresh``,
+or call ``POST /api/monitor/test`` (which sends a real Pushover
+notification).
+
+Scope: only state-changing methods are checked.  A few GET endpoints can
+still spend Odds API quota when requested cross-site (for example by an
+``<img>`` tag); that gap is tracked in docs/KNOWN_ISSUES.md (S-3).
 
 Policy: a state-changing request (any method other than GET/HEAD/OPTIONS)
 that carries an ``Origin`` header must come from an allowed origin.

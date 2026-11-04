@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { Opportunity, OpportunitiesResponse } from "@/lib/types";
+import { Opportunity, OpportunitiesResponse, type OddsFailure } from "@/lib/types";
 import { fetchSnapshotStatus, fetchSnapshot, refreshOpportunities, fetchSportsRegistry, fetchScanConfig, updateScanConfig } from "@/lib/api";
 import { startMonitoring, stopMonitoring } from "@/lib/monitor-api";
 import { sportLabel, marketTypeLabel, isPropType, SportRegistryEntry } from "@/lib/sport-labels";
@@ -76,7 +76,7 @@ export function DashboardClient({ initialData }: Props) {
   const pollFailuresRef = useRef(0);
   // Optional partial-failure signals (only rendered if the backend sends them).
   const [degraded, setDegraded] = useState<boolean | null>(null);
-  const [oddsFailures, setOddsFailures] = useState<string[] | number | null>(null);
+  const [oddsFailures, setOddsFailures] = useState<OddsFailure[] | null>(null);
   // Offline demo mode flag from /status (synthetic data banner).
   const [demoMode, setDemoMode] = useState(false);
   // Visible error for user-initiated actions (scan, books toggle, auto monitor).
