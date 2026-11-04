@@ -137,7 +137,10 @@ class AlertManager:
 
         # --- Rate limit ---
         hourly_remaining = cfg.max_alerts_per_hour - self.state.alerts_sent_this_hour()
-        send_cap = min(hourly_remaining, len(to_alert))
+        # Clamp at 0: if the cap was lowered below alerts already sent this
+        # hour, hourly_remaining is negative and a negative slice would keep
+        # items instead of suppressing them all.
+        send_cap = max(0, min(hourly_remaining, len(to_alert)))
 
         if send_cap < len(to_alert):
             result.suppressed_rate_limit += len(to_alert) - send_cap

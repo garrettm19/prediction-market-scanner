@@ -313,6 +313,44 @@ class TestRunCycle:
         assert result.suppressed_rate_limit == 3
         assert len(notifier.sent) == 2
 
+    def test_rate_limit_cap_lowered_below_already_sent_sends_nothing(self):
+        """Regression (moni0): cap lowered below alerts already sent this hour.
+
+        10 alerts already sent, cap now 5 -> hourly_remaining is -5.  A
+        negative slice previously kept len+(-5) items; the cap must instead
+        suppress every candidate.
+        """
+        manager, state, notifier = _make_manager(_make_config(max_alerts_per_hour=5))
+        now = time.time()
+        state._alerts_this_hour = [now - 60 - i for i in range(10)]
+
+        opps = [
+            _make_opp(event=f"Event {i}", side=f"Player {i}", edge=0.06 + i * 0.01)
+            for i in range(8)
+        ]
+        result = asyncio.run(manager.run_cycle(opps))
+
+        assert result.alerts_sent == 0
+        assert result.suppressed_rate_limit == 8
+        assert len(notifier.sent) == 0
+        assert state.alerts_sent_this_hour() == 10
+
+    def test_rate_limit_remaining_exactly_zero_sends_nothing(self):
+        """Boundary: alerts already sent == cap -> nothing sent, all suppressed."""
+        manager, state, notifier = _make_manager(_make_config(max_alerts_per_hour=5))
+        now = time.time()
+        state._alerts_this_hour = [now - 60 - i for i in range(5)]
+
+        opps = [
+            _make_opp(event=f"Event {i}", side=f"Player {i}", edge=0.06 + i * 0.01)
+            for i in range(3)
+        ]
+        result = asyncio.run(manager.run_cycle(opps))
+
+        assert result.alerts_sent == 0
+        assert result.suppressed_rate_limit == 3
+        assert len(notifier.sent) == 0
+
     def test_disabled_monitor_does_nothing(self):
         manager, _, notifier = _make_manager(_make_config(enabled=False, dry_run=False))
         opp = _make_opp(status="BUY", edge=0.08)
