@@ -1,18 +1,16 @@
-# MasG EV Tool
+# Prediction Market Scanner
 
-A cross-platform market-data analysis and monitoring system. It ingests
-prices from two prediction-market exchanges (**Kalshi** and **Polymarket**),
-matches each market to the same real-world sporting event at a sportsbook
-(**FanDuel**, via The Odds API), converts the sportsbook odds into a vig-free
-model probability, and flags markets whose exchange price diverges from that
-model estimate. Every flagged market carries a full, inspectable rule trace
-explaining why it was classified **BUY**, **WATCH**, or **SKIP**.
+Prediction Market Scanner compares sports prices on two prediction-market
+exchanges (**Kalshi** and **Polymarket**) with sportsbook odds from **FanDuel**
+(via The Odds API) to find markets that look mispriced. It matches each
+exchange market to the same game at the sportsbook, removes the bookmaker's
+margin to get a model probability, and labels every market **BUY**, **WATCH**
+or **SKIP** with a rule-by-rule explanation.
 
-The system is **read-only decision support**. It places no orders, holds no
-wallet keys, and never submits anything to an exchange; acting on a result is
-always a manual step.
+It is read-only. It never places orders or connects to a wallet, and any
+action on a result is taken by hand.
 
-**The engineering problems it solves:**
+**Main technical challenges:**
 
 - **Heterogeneous data.** Three providers describe the same game in different
   shapes: binary YES/NO contracts, paired two-way markets, three-way soccer
@@ -32,8 +30,8 @@ always a manual step.
 - **Monitoring.** A scheduler driven by WebSocket and polling events feeds an
   alert manager with cooldown, hourly caps and a dry-run default.
 
-> **Run it without any accounts:** an [offline demo mode](docs/DEMO_GUIDE.md)
-> pushes deterministic synthetic markets through the real pipeline. No API keys
+> **Try it without any accounts:** an [offline demo mode](docs/DEMO_GUIDE.md)
+> runs made-up markets through the real pipeline. No API keys
 > are needed, no external requests are made, and no notifications are sent.
 
 ---
@@ -305,7 +303,7 @@ There is no Node.js requirement for a quick look. This prints the demo
 pipeline's classifications in the terminal:
 
 ```bash
-cd backend && MASG_DEMO_MODE=1 python -m services.demo --all
+cd backend && SCANNER_DEMO_MODE=1 python -m services.demo --all
 ```
 
 [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) has a 3–5 minute technical

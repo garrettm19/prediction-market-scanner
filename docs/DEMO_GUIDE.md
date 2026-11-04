@@ -1,11 +1,11 @@
 # Offline Demo Guide
 
-This guide is a 3–5 minute technical walkthrough of MasG EV Tool that needs no
+This guide is a 3–5 minute technical walkthrough of Prediction Market Scanner that needs no
 accounts, API keys or paid requests.
 
 ## What demo mode is
 
-Setting `MASG_DEMO_MODE=1` swaps the **data sources** and nothing else. The
+Setting `SCANNER_DEMO_MODE=1` swaps the **data sources** and nothing else. The
 code path is the production one:
 
 ```
@@ -57,7 +57,7 @@ automatically; the **Scan** button re-runs it.
 virtualenv with `requirements.txt` installed):
 
 ```bat
-cd backend && set "MASG_DEMO_MODE=1" && .venv\Scripts\activate && uvicorn main:app --host 127.0.0.1 --port 8000
+cd backend && set "SCANNER_DEMO_MODE=1" && .venv\Scripts\activate && uvicorn main:app --host 127.0.0.1 --port 8000
 cd frontend && set "NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000" && npm run dev
 ```
 
@@ -65,7 +65,7 @@ cd frontend && set "NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000" && npm run de
 
 ```bash
 cd backend
-MASG_DEMO_MODE=1 python -m services.demo --all
+SCANNER_DEMO_MODE=1 python -m services.demo --all
 ```
 
 ## Walkthrough (about 4 minutes)

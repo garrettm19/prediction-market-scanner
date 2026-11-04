@@ -51,7 +51,7 @@ async def _run(show_all: bool) -> str:
         for o in opps
     ]
     out = [
-        "MasG EV Tool -- OFFLINE DEMO MODE (synthetic example data; no external requests)",
+        "Prediction Market Scanner -- OFFLINE DEMO MODE (synthetic example data; no external requests)",
         f"Pass B status counts (all evaluated candidates): {meta['status_counts']}",
         "",
         _table(rows),

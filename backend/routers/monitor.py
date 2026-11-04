@@ -237,7 +237,7 @@ async def test_notification(req: TestNotificationRequest | None = None) -> dict:
         api_token=cfg.pushover_api_token,
     )
     payload = AlertPayload(
-        title="MasG EV Tool \u2014 Test",
+        title="Prediction Market Scanner \u2014 Test",
         body=req.message if req and req.message else "Push notifications are working.",
         priority=0,
     )

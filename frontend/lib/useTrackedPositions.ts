@@ -4,6 +4,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Opportunity, TrackedPosition } from "./types";
 import { fetchPriceHistory, fetchHistoricalOdds } from "./api";
 
+// Storage keys keep their original prefix so existing tracked positions in
+// users' browsers are not lost.
 const STORAGE_KEY = "masg_tracked_positions";
 // Bump this when CLV calculation logic changes to force recomputation.
 const CLV_VERSION = 4;  // v4: entry_ev + CLV = fd_close_prob - entry_price

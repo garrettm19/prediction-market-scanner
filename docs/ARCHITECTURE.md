@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes how the MasG EV Tool is built, as it stands in the source code. When this document and the code disagree, the code is correct. All paths are relative to the repository root.
+This document describes how Prediction Market Scanner is built, as it stands in the source code. When this document and the code disagree, the code is correct. All paths are relative to the repository root.
 
 Contents:
 
@@ -26,7 +26,7 @@ Contents:
 
 ## 1. System overview and trust boundary
 
-The MasG EV Tool is a local, single-user scanner that supports decisions. It reads prices from prediction markets (Kalshi, and optionally Polymarket) and compares each one with a **model probability**: the FanDuel-implied, devigged probability fetched through The Odds API. When a market's entry price is below the model probability by enough margin, and every matching and data-quality check passes, the market is labelled `BUY`. Otherwise it is labelled `WATCH` or `SKIP`.
+Prediction Market Scanner is a local, single-user scanner that supports decisions. It reads prices from prediction markets (Kalshi, and optionally Polymarket) and compares each one with a **model probability**: the FanDuel-implied, devigged probability fetched through The Odds API. When a market's entry price is below the model probability by enough margin, and every matching and data-quality check passes, the market is labelled `BUY`. Otherwise it is labelled `WATCH` or `SKIP`.
 
 The model probability is an estimate taken from one sportsbook's prices. It is not an objectively true probability. In the code it is called `p_true`.
 

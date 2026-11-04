@@ -1,4 +1,4 @@
-# MasG EV Tool — Manual Testing Runbook
+# Prediction Market Scanner — Manual Testing Runbook
 
 > Practical operator guide for running the scanner, interpreting output,
 > and deciding whether to act on a BUY. Companion to [`README.md`](../README.md) (overview + getting started),
@@ -55,7 +55,7 @@ Two terminals open, backend on :8000, frontend on :3000.
 
 ### Offline demo (no keys, no outbound calls)
 `./start-demo.sh` (macOS/Linux/Git Bash) runs both servers with
-`MASG_DEMO_MODE=1` on synthetic fixtures. Monitor start/test are refused
+`SCANNER_DEMO_MODE=1` on synthetic fixtures. Monitor start/test are refused
 with 403 in demo mode. See [`DEMO_GUIDE.md`](./DEMO_GUIDE.md).
 
 ### Required env vars (in `backend/.env`)
@@ -66,7 +66,7 @@ KALSHI_API_KEY      = <your-key>          # optional but recommended
 PUSHOVER_USER_KEY   = <your-key>          # optional, only if you ever enable live alerts
 PUSHOVER_API_TOKEN  = <your-token>
 ```
-(`MASG_DEMO_MODE=1` is an optional extra; see `OPERATIONS.md` §2 for the full table.)
+(`SCANNER_DEMO_MODE=1` is an optional extra; see `OPERATIONS.md` §2 for the full table.)
 Without `ODDS_API_KEY`, the pipeline fails with 503 because there is no FanDuel truth source.
 
 ### Stopping
@@ -321,7 +321,7 @@ intended way to confirm the notification path before flipping for real.
 ### Current verified state
 - **Pushover credential / network path**: verified end-to-end via
   `POST /api/monitor/test` → `{"sent": true}`, HTTP 200, log:
-  `Pushover: sent 'MasG EV Tool — Test' (priority=0)`. Phone receipt
+  `Pushover: sent 'Prediction Market Scanner — Test' (priority=0)`. Phone receipt
   confirmed.
 - **Conservative dry-run loop**: validated across multi-cycle windows.
   AlertManager filtering, cooldown, hourly cap, BUY-only gate, ambiguity

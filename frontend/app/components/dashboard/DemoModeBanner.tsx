@@ -6,7 +6,7 @@ interface DemoModeBannerProps {
 
 /**
  * Persistent notice shown while the backend runs in offline demo mode
- * (MASG_DEMO_MODE=1, reported by /api/opportunities/status → demo_mode).
+ * (SCANNER_DEMO_MODE=1, reported by /api/opportunities/status → demo_mode).
  * Not dismissible: every number on the page is synthetic while it shows.
  */
 export function DemoModeBanner({ show }: DemoModeBannerProps) {

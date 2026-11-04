@@ -1,5 +1,5 @@
 """
-Offline demo mode (MASG_DEMO_MODE=1).
+Offline demo mode (SCANNER_DEMO_MODE=1).
 
 Covers:
   (a) the synthetic fixtures run through the REAL pipeline and come out with
@@ -54,7 +54,7 @@ def _wait_until_idle(timeout: float = 5.0) -> bool:
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
-    monkeypatch.delenv("MASG_DEMO_MODE", raising=False)
+    monkeypatch.delenv("SCANNER_DEMO_MODE", raising=False)
     reset_scan_config()
     snap_mod.clear_snapshot()
     yield
@@ -65,7 +65,7 @@ def _clean(monkeypatch):
 
 @pytest.fixture
 def demo_on(monkeypatch):
-    monkeypatch.setenv("MASG_DEMO_MODE", "1")
+    monkeypatch.setenv("SCANNER_DEMO_MODE", "1")
     yield
 
 
@@ -138,12 +138,12 @@ def _by(trace, market_id, side=None):
 class TestActivation:
     @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", " Yes "])
     def test_truthy_values(self, monkeypatch, value):
-        monkeypatch.setenv("MASG_DEMO_MODE", value)
+        monkeypatch.setenv("SCANNER_DEMO_MODE", value)
         assert is_demo_mode() is True
 
     @pytest.mark.parametrize("value", ["", "0", "false", "no", "off", "demo"])
     def test_falsy_values(self, monkeypatch, value):
-        monkeypatch.setenv("MASG_DEMO_MODE", value)
+        monkeypatch.setenv("SCANNER_DEMO_MODE", value)
         assert is_demo_mode() is False
 
     def test_unset_is_off(self):

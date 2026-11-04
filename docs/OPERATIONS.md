@@ -1,6 +1,6 @@
 # Operations Reference
 
-Operator reference for running MasG EV Tool locally: environment, defaults,
+Operator reference for running Prediction Market Scanner locally: environment, defaults,
 REST API, configuration, alerting, Odds API budget, and troubleshooting.
 
 All values below are taken from source code. Where a value here and the code
@@ -11,7 +11,7 @@ Related documents:
 
 - [Manual testing runbook](./MANUAL_TESTING_RUNBOOK.md): step-by-step manual
   procedure, BUY verification checklist, red flags.
-- [Demo guide](./DEMO_GUIDE.md): offline demo mode (`MASG_DEMO_MODE=1`).
+- [Demo guide](./DEMO_GUIDE.md): offline demo mode (`SCANNER_DEMO_MODE=1`).
 
 > **Scope reminder.** The tool is read-only decision support. It never places
 > orders, signs transactions or holds wallet credentials. Every marketplace
@@ -84,7 +84,7 @@ values. Never commit `.env` or paste key values into logs, issues or docs.
 | `GAMMA_API_BASE` | No | `backend/services/events.py`, `backend/services/price_history.py` | Defaults to the public Polymarket Gamma endpoint. Only used when Polymarket is enabled, for Polymarket price history, and by the legacy `GET /api/odds/matches`. |
 | `PUSHOVER_USER_KEY` | Only for live alerts or the credential test | `_get_config()` in `backend/routers/monitor.py` | `has_pushover_credentials=false`; `POST /api/monitor/test` returns 400; `POST /api/monitor/start` with `dry_run=false` returns 400. |
 | `PUSHOVER_API_TOKEN` | Only for live alerts or the credential test | same as above | same as above |
-| `MASG_DEMO_MODE` | No | `backend/services/demo/__init__.py`; see [DEMO_GUIDE.md](./DEMO_GUIDE.md) | Normal live-data operation. |
+| `SCANNER_DEMO_MODE` | No | `backend/services/demo/__init__.py`; see [DEMO_GUIDE.md](./DEMO_GUIDE.md) | Normal live-data operation. |
 
 Frontend:
 

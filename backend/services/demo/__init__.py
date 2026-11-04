@@ -1,7 +1,7 @@
 """
 Offline demo mode.
 
-Activated by ``MASG_DEMO_MODE=1`` (``true`` / ``yes`` also accepted).  In
+Activated by ``SCANNER_DEMO_MODE=1`` (``true`` / ``yes`` also accepted).  In
 demo mode the snapshot refresh feeds the REAL pipeline (Pass A feature
 extraction -> series dedup / ambiguity enrichment -> Pass B rule engine ->
 Kelly) from a deterministic synthetic dataset instead of Kalshi /
@@ -22,12 +22,12 @@ from __future__ import annotations
 
 import os
 
-DEMO_ENV_VAR = "MASG_DEMO_MODE"
+DEMO_ENV_VAR = "SCANNER_DEMO_MODE"
 _TRUTHY = {"1", "true", "yes"}
 
 
 def is_demo_mode() -> bool:
-    """True when MASG_DEMO_MODE is set to 1/true/yes (case-insensitive).
+    """True when SCANNER_DEMO_MODE is set to 1/true/yes (case-insensitive).
 
     Read at call time (not import time) so tests can monkeypatch the env.
     """

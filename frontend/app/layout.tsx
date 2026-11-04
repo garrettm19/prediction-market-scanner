@@ -19,7 +19,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MasG EV Tool",
+  title: "Prediction Market Scanner",
   description: "Cross-platform EV scanner for prediction market opportunities",
 };
 
@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               className="font-mono font-bold text-[13px] tracking-[0.2em] uppercase"
               style={{ color: "#e2e8f0" }}
             >
-              MasG EV
+              Market Scanner
             </span>
             <span
               className="font-mono text-[8px] tracking-wider px-1.5 py-0.5 rounded uppercase ml-1"

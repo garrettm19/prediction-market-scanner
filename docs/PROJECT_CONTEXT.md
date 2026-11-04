@@ -1,4 +1,4 @@
-# MasG EV Tool — Full Project Context
+# Prediction Market Scanner — Full Project Context
 
 > **Note:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) is the maintained architecture overview; this file is a historical handoff snapshot (facts refreshed 2026-11-04).
 
@@ -11,7 +11,7 @@
 
 ## 1. What this product is
 
-MasG EV Tool is a **read-only cross-platform EV (expected value) scanner** for
+Prediction Market Scanner is a **read-only cross-platform EV (expected value) scanner** for
 prediction markets. It compares live prices on **Polymarket** and **Kalshi**
 against **FanDuel-derived "true" probabilities** (sourced through The Odds API)
 to find positive-EV mispricings, and pushes phone alerts when a new BUY
@@ -66,7 +66,7 @@ guard (`services/origin_guard.py`) rejects cross-site state-changing requests.
 ## 2. Repo layout
 
 ```
-masg-ev-tool/
+prediction-market-scanner/
 ├── README.md                  # Project overview + getting started
 ├── CLAUDE.md                  # Project rules + change discipline (small file)
 ├── SECURITY.md
@@ -79,7 +79,7 @@ masg-ev-tool/
 │   ├── DEMO_GUIDE.md          # Offline demo mode
 │   └── screenshots/
 ├── start-dev.bat              # Windows launcher for both servers
-├── start-demo.sh              # Offline demo launcher (MASG_DEMO_MODE=1)
+├── start-demo.sh              # Offline demo launcher (SCANNER_DEMO_MODE=1)
 ├── .github/workflows/ci.yml   # Backend pytest (3.12/3.13) + frontend typecheck/build
 ├── .gitignore
 ├── backend/
@@ -579,7 +579,7 @@ CI (`.github/workflows/ci.yml`) runs the backend suite on Python 3.12/3.13
 with outbound HTTP blackholed, plus the frontend typecheck and build.
 
 ### Offline demo
-`start-demo.sh` (or `MASG_DEMO_MODE=1`) runs the real pipeline on synthetic
+`start-demo.sh` (or `SCANNER_DEMO_MODE=1`) runs the real pipeline on synthetic
 fixtures with no keys or outbound calls; see `docs/DEMO_GUIDE.md`.
 
 ---

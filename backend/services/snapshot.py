@@ -129,7 +129,7 @@ async def refresh_snapshot(
     are kept in the stored snapshot meta so /status can surface a degraded
     (partial-failure) refresh instead of presenting it as fully fresh.
 
-    Demo mode (MASG_DEMO_MODE=1, see services/demo): the same pipeline runs
+    Demo mode (SCANNER_DEMO_MODE=1, see services/demo): the same pipeline runs
     on the synthetic demo adapters + odds fetcher, ``scope`` is ignored (no
     odds cache), the paper maker is forced off, and meta["data_source"] is
     "demo".  Otherwise meta["data_source"] is "live".

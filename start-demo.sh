@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MasG EV Tool -- OFFLINE DEMO MODE launcher (macOS / Linux / Git Bash).
+# Prediction Market Scanner -- OFFLINE DEMO MODE launcher (macOS / Linux / Git Bash).
 #
 # Runs the backend + dashboard on synthetic example data:
 #   * no API keys needed (backend/.env is not required; no keys are used)
@@ -16,19 +16,19 @@
 # Prerequisites: backend deps installed (pip install -r backend/requirements.txt,
 # optionally into backend/.venv) and frontend deps (cd frontend && npm install).
 # No Node? Run the pipeline once in the terminal instead:
-#     cd backend && MASG_DEMO_MODE=1 python -m services.demo --all
+#     cd backend && SCANNER_DEMO_MODE=1 python -m services.demo --all
 #
 # Windows (cmd.exe) equivalent -- two terminals:
-#     cd backend && set "MASG_DEMO_MODE=1" && .venv\Scripts\activate && uvicorn main:app --host 127.0.0.1 --port 8000
+#     cd backend && set "SCANNER_DEMO_MODE=1" && .venv\Scripts\activate && uvicorn main:app --host 127.0.0.1 --port 8000
 #     cd frontend && set "NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000" && npm run dev
 # Windows (PowerShell):
-#     cd backend; $env:MASG_DEMO_MODE="1"; .venv\Scripts\Activate.ps1; uvicorn main:app --host 127.0.0.1 --port 8000
+#     cd backend; $env:SCANNER_DEMO_MODE="1"; .venv\Scripts\Activate.ps1; uvicorn main:app --host 127.0.0.1 --port 8000
 #     cd frontend; $env:NEXT_PUBLIC_BACKEND_URL="http://127.0.0.1:8000"; npm run dev
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-export MASG_DEMO_MODE=1
+export SCANNER_DEMO_MODE=1
 # Point the dashboard at the IPv4 loopback the backend binds to.
 export NEXT_PUBLIC_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-http://127.0.0.1:8000}"
 export NEXT_TELEMETRY_DISABLED=1

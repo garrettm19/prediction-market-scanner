@@ -2,7 +2,7 @@
 
 ## Supported deployment model
 
-MasG EV Tool is a **local, single-user** application. It runs on one machine for one operator. It has no other supported deployment model.
+Prediction Market Scanner is a **local, single-user** application. It runs on one machine for one operator. It has no other supported deployment model.
 
 - **No authentication.** The FastAPI backend (`backend/main.py`) has no login, sessions, API tokens, or per-user authorization. Anyone who can reach the backend port can read its data and call every endpoint.
 - **Loopback binding.** The backend runs under uvicorn without a `--host` flag (`start-dev.bat`: `uvicorn main:app --reload --port 8000`), so it listens on uvicorn's default, `127.0.0.1`.

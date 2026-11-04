@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 # Keep the request logs but mask credential query params.
 configure_log_redaction()
 
-app = FastAPI(title="MasG EV Tool API", version="2.0.0")
+app = FastAPI(title="Prediction Market Scanner API", version="2.0.0")
 
 # Browser origins allowed to call this local API (the Next.js dashboard).
 ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]

@@ -340,7 +340,7 @@ class SnapshotStatusResponse(BaseModel):
     odds_failures: list[dict] = []
     degraded: bool = False
     # Additive: True when the backend runs in offline demo mode
-    # (MASG_DEMO_MODE=1) -- synthetic data, no external requests.
+    # (SCANNER_DEMO_MODE=1) -- synthetic data, no external requests.
     demo_mode: bool = False
     # Additive: meta["data_source"] of the stored snapshot ("demo" | "live").
     data_source: str | None = None

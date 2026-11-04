@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 # Demo mode reads proposals from this directory, which is never created:
 # a non-existent directory reads as an empty store.
-_DEMO_EMPTY_STORE_DIR = Path(tempfile.gettempdir()) / "masg-demo-empty-maker-store"
+_DEMO_EMPTY_STORE_DIR = Path(tempfile.gettempdir()) / "scanner-demo-empty-maker-store"
 
 # Lazy module-level singleton.  Production callers share one store
 # instance; tests use FastAPI's ``app.dependency_overrides`` to swap
