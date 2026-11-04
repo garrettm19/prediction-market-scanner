@@ -12,6 +12,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from services.demo import is_demo_mode
 from services.demo.guards import block_in_demo
 from services.monitor.config import MonitorConfig, AlertPreset, apply_preset
 from services.monitor.scheduler import MonitorScheduler
@@ -166,6 +167,10 @@ async def start_monitoring() -> dict:
 @router.post("/monitor/stop")
 async def stop_monitoring() -> dict:
     """Stop the monitoring loop."""
+    if is_demo_mode():
+        # Monitoring can never start in demo mode, so there is nothing to
+        # stop; skip the scheduler so no alert state is written to disk.
+        return {"status": "stopped"}
     cfg = _get_config()
     cfg.enabled = False
     scheduler = _get_scheduler()
@@ -193,6 +198,9 @@ async def get_monitor_status() -> MonitorStatusResponse:
 
 @router.get("/monitor/history")
 async def get_alert_history() -> list[dict]:
+    if is_demo_mode():
+        # Don't show the operator's real alert history next to demo data.
+        return []
     scheduler = _get_scheduler()
     records = scheduler.state.recent_alerts(limit=50)
     return [

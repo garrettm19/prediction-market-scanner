@@ -2,7 +2,7 @@
 # MasG EV Tool -- OFFLINE DEMO MODE launcher (macOS / Linux / Git Bash).
 #
 # Runs the backend + dashboard on synthetic example data:
-#   * no API keys needed (.env is not required and is never read for demo data)
+#   * no API keys needed (backend/.env is not required; no keys are used)
 #   * no requests to Kalshi, Polymarket or The Odds API
 #   * no Pushover notifications (monitor start/test are refused with 403)
 #   * no orders of any kind (the tool never places orders; the paper maker
@@ -19,8 +19,8 @@
 #     cd backend && MASG_DEMO_MODE=1 python -m services.demo --all
 #
 # Windows (cmd.exe) equivalent -- two terminals:
-#     cd backend && set MASG_DEMO_MODE=1 && .venv\Scripts\activate && uvicorn main:app --host 127.0.0.1 --port 8000
-#     cd frontend && set NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000 && npm run dev
+#     cd backend && set "MASG_DEMO_MODE=1" && .venv\Scripts\activate && uvicorn main:app --host 127.0.0.1 --port 8000
+#     cd frontend && set "NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000" && npm run dev
 # Windows (PowerShell):
 #     cd backend; $env:MASG_DEMO_MODE="1"; .venv\Scripts\Activate.ps1; uvicorn main:app --host 127.0.0.1 --port 8000
 #     cd frontend; $env:NEXT_PUBLIC_BACKEND_URL="http://127.0.0.1:8000"; npm run dev
@@ -37,6 +37,11 @@ if [[ -x "$ROOT/backend/.venv/bin/python" ]]; then
   PY="$ROOT/backend/.venv/bin/python"
 else
   PY="$(command -v python3 || command -v python)"
+fi
+
+if [[ ! -d "$ROOT/frontend/node_modules" ]]; then
+  echo "frontend/node_modules not found -- run: (cd frontend && npm install)" >&2
+  exit 1
 fi
 
 pids=()

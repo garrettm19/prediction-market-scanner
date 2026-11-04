@@ -20,12 +20,15 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import tempfile
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.demo import is_demo_mode
 from services.demo.guards import ensure_not_demo
 from services.maker.config import (
     MakerConfig,
@@ -41,6 +44,10 @@ from services.maker.state import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Demo mode reads proposals from this directory, which is never created:
+# a non-existent directory reads as an empty store.
+_DEMO_EMPTY_STORE_DIR = Path(tempfile.gettempdir()) / "masg-demo-empty-maker-store"
+
 # Lazy module-level singleton.  Production callers share one store
 # instance; tests use FastAPI's ``app.dependency_overrides`` to swap
 # in a tmp-path-backed store without touching this module.
@@ -49,6 +56,11 @@ _default_store: PaperMakerStore | None = None
 
 def get_paper_store() -> PaperMakerStore:
     global _default_store
+    if is_demo_mode():
+        # Demo mode must never surface the operator's real paper records
+        # (backend/data) under the synthetic-data banner.  The maker cannot
+        # be enabled in demo mode, so this store simply reads as empty.
+        return PaperMakerStore(base_dir=_DEMO_EMPTY_STORE_DIR)
     if _default_store is None:
         _default_store = PaperMakerStore()
     return _default_store

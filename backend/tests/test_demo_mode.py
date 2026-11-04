@@ -471,3 +471,61 @@ class TestDemoOffUnchanged:
                 params={"sport_key": "k", "event_id": "e", "date": "2099-01-01T00:00:00Z"},
             )
         assert resp.status_code == 200
+
+
+class TestDemoHidesLocalRuntimeData:
+    """Demo mode must not show (or write) the operator's real runtime data
+    next to synthetic opportunities."""
+
+    def test_monitor_stop_is_noop_and_writes_no_state(self, demo_on, tmp_path, monkeypatch):
+        import routers.monitor as monitor_router
+        import services.monitor.state as alert_state
+
+        state_file = tmp_path / "alert_state.json"
+        monkeypatch.setattr(alert_state, "_DEFAULT_PATH", str(state_file))
+        monkeypatch.setattr(monitor_router, "_scheduler", None)
+        monkeypatch.setattr(monitor_router, "_config", None)
+
+        res = TestClient(app).post("/api/monitor/stop")
+
+        assert res.status_code == 200
+        assert res.json() == {"status": "stopped"}
+        assert monitor_router._scheduler is None
+        assert not state_file.exists()
+
+    def test_monitor_history_is_empty_even_with_real_records(self, demo_on, tmp_path, monkeypatch):
+        import routers.monitor as monitor_router
+        from services.monitor.config import MonitorConfig
+        from services.monitor.scheduler import MonitorScheduler
+        from services.monitor.state import AlertStateStore
+
+        store = AlertStateStore(path=str(tmp_path / "alert_state.json"))
+        store.upsert("real-key", event="Real Event", last_alert_ts=time.time(), alert_count=1)
+        scheduler = MonitorScheduler(monitor_config=MonitorConfig())
+        scheduler.state = store
+        monkeypatch.setattr(monitor_router, "_scheduler", scheduler)
+
+        res = TestClient(app).get("/api/monitor/history")
+
+        assert res.status_code == 200
+        assert res.json() == []
+
+    def test_maker_reads_ignore_real_paper_store(self, demo_on, tmp_path, monkeypatch):
+        import routers.maker as maker_router
+        from services.maker.state import PaperMakerStore
+
+        real_store = PaperMakerStore(base_dir=tmp_path / "real")
+        monkeypatch.setattr(maker_router, "_default_store", real_store)
+        monkeypatch.setattr(
+            real_store, "read_recent",
+            lambda *a, **k: (_ for _ in ()).throw(AssertionError("real store read in demo")),
+        )
+        client = TestClient(app)
+
+        proposals = client.get("/api/maker/proposals")
+        summary = client.get("/api/maker/summary")
+
+        assert proposals.status_code == 200
+        assert proposals.json()["proposals"] == []
+        assert summary.status_code == 200
+        assert not maker_router._DEMO_EMPTY_STORE_DIR.exists()
