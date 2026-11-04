@@ -51,7 +51,10 @@ class MonitorConfig:
     priority_high_min_edge: float = 0.10           # edge >= 10% → high priority push
 
     # --- Dry run ---
-    dry_run: bool = False
+    # Fail-closed default: live Pushover delivery must be an explicit opt-in
+    # (POST /api/monitor/config dry_run=false).  Config is in-memory only, so
+    # a backend restart must come back in dry-run, never silently live.
+    dry_run: bool = True
 
 
 PRESETS: dict[AlertPreset, dict] = {
