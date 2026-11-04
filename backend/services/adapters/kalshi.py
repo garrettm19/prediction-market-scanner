@@ -299,6 +299,19 @@ def _extract_title_subject(title: str) -> str:
     return ""
 
 
+# Kalshi labels the draw outcome of a 3-way (soccer) event as "Tie" (or
+# "Draw") in yes_sub_title, with a "-TIE" ticker suffix.
+_DRAW_LABELS = {"tie", "draw"}
+
+
+def _is_draw_market(yes_sub_title: str | None, ticker: str | None) -> bool:
+    """True when a raw Kalshi market is the draw/Tie leg of a 3-way event."""
+    sub = (yes_sub_title or "").lower().strip()
+    ticker = ticker or ""
+    suffix = ticker.rsplit("-", 1)[-1].lower() if "-" in ticker else ""
+    return sub in _DRAW_LABELS or suffix == "tie"
+
+
 def _build_event_markets(
     event_ticker: str,
     market_group: list[tuple[dict, str, str]],
@@ -314,8 +327,19 @@ def _build_event_markets(
     each with its own direct yes_ask price.  The draw market is excluded
     from pricing because "No Home" ≠ "Buy Away" when a draw exists.
     """
+    # A raw group containing a draw/Tie market is a 3-way event.  If two
+    # valid team markets cannot be formed below, emit NOTHING for it: the
+    # draw contract must never be emitted as an h2h team market, and a lone
+    # team market's NO price (1 - team) includes the draw mass, so it cannot
+    # price the opponent either.
+    group_has_draw = any(
+        _is_draw_market(m.get("yes_sub_title"), m.get("ticker"))
+        for m, _series, _slug in market_group
+    )
+
     if len(market_group) < 2:
         # Single market — can't pair. Use it directly.
+        # (_single_market_fallback itself rejects a draw/Tie market.)
         m, series, slug = market_group[0]
         nm = _single_market_fallback(m, series, slug, fetch_ts)
         return [nm] if nm else []
@@ -351,7 +375,7 @@ def _build_event_markets(
         })
 
     if len(parsed) < 2:
-        if parsed:
+        if parsed and not group_has_draw:
             m, series, slug = market_group[0]
             nm = _single_market_fallback(m, series, slug, fetch_ts)
             return [nm] if nm else []
@@ -361,20 +385,18 @@ def _build_event_markets(
     # Soccer events have 3 markets (home/away/draw). The draw market
     # must be excluded from the 2-market pairing logic because buying
     # "No Home" ≠ "Buy Away" when a draw is possible.
-    _DRAW_LABELS = {"tie", "draw"}
     draw_market = None
     team_markets = []
     for p in parsed:
-        sub = p["yes_sub_title"].lower().strip()
-        suffix = p["ticker"].rsplit("-", 1)[-1].lower() if "-" in p["ticker"] else ""
-        if sub in _DRAW_LABELS or suffix == "tie":
+        if _is_draw_market(p["yes_sub_title"], p["ticker"]):
             draw_market = p
         else:
             team_markets.append(p)
 
     if len(team_markets) < 2:
-        # Can't form a team pair — fall back
-        if parsed:
+        # Can't form a team pair — fall back (never for a 3-way event; see
+        # group_has_draw above).
+        if parsed and not group_has_draw:
             m, series, slug = market_group[0]
             nm = _single_market_fallback(m, series, slug, fetch_ts)
             return [nm] if nm else []
@@ -535,7 +557,13 @@ def _single_market_fallback(
     series_slug: str,
     fetch_ts: float = 0.0,
 ) -> NormalizedMarket | None:
-    """Fallback for unpaired markets — use yes_ask directly."""
+    """Fallback for unpaired markets — use yes_ask directly.
+
+    Never emits the draw/Tie leg of a 3-way event: it is not a team
+    market and its side hint ("Tie") must not reach h2h matching.
+    """
+    if _is_draw_market(m.get("yes_sub_title"), m.get("ticker")):
+        return None
     yes_ask = _safe_float(m.get("yes_ask_dollars"))
     if yes_ask <= 0.02 or yes_ask >= 0.98:
         return None
